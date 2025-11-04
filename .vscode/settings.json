@@ -1,0 +1,17 @@
+{
+    // Chọn Python interpreter từ .venv
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    
+    // Tự động kích hoạt venv khi mở terminal mới
+    "python.terminal.activateEnvironment": true,
+    
+    // Format code khi save
+    "editor.formatOnSave": true,
+    
+    // Dùng black để format Python
+    "python.formatting.provider": "black",
+    
+    // Linting với pylint
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true
+}
