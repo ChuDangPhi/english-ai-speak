@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         return f"mysql+pymysql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
     
     # JWT Security
-    SECRET_KEY: str = "your-secret-key-change-in-production-min-32-characters"
+    SECRET_KEY: str = "webtienganhAI"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -51,8 +51,13 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
     
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    # CORS - Allow multiple origins for development
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:5500",  # Live Server / FE
+        "http://127.0.0.1:3000",
+        "*"  # Allow all origins in development (remove in production!)
+    ]
     
     # Redis (Optional)
     REDIS_HOST: str = "localhost"

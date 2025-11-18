@@ -28,13 +28,14 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS Configuration
+# CORS Configuration - Cho phép tất cả origins trong development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],  # Cho phép tất cả origins (chỉ dùng development!)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Cho phép tất cả HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Cho phép tất cả headers
+    expose_headers=["*"],  # Expose tất cả headers cho client
 )
 
 

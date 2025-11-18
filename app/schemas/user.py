@@ -39,6 +39,14 @@ class UserLogin(BaseModel):
     password: str = Field(..., description="Mật khẩu", examples=["password123"])
 
 
+class RefreshTokenRequest(BaseModel):
+    """
+    Schema cho refresh token request
+    Client gửi refresh_token để lấy access_token mới
+    """
+    refresh_token: str = Field(..., description="Refresh token nhận được khi đăng ký/đăng nhập")
+
+
 # ============= RESPONSE SCHEMAS (Output sever => client) =============
 
 class UserResponse(BaseModel):

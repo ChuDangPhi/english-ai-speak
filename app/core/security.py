@@ -64,7 +64,7 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         JWT token string
         
     Example:
-        >>> create_access_token({"sub": "user123", "role": "student"})
+        >>> create_access_token({"sub": "user123", "email": "user@example.com"})
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
     """
     # Copy data để không thay đổi dict gốc
@@ -77,8 +77,11 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         # Mặc định 30 phút (lấy từ config)
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    # Thêm thời gian hết hạn vào payload
-    to_encode.update({"exp": expire})
+    # Thêm thông tin vào payload
+    to_encode.update({
+        "exp": expire,              # Expiration time
+        "type": "access"            # Token type để phân biệt access vs refresh
+    })
     
     # Encode JWT token
     # SECRET_KEY: Key bí mật để mã hóa (KHÔNG được để lộ)
@@ -101,12 +104,21 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
         
     Returns:
         JWT refresh token string
+        
+    Example:
+        >>> create_refresh_token({"sub": "user123", "email": "user@example.com"})
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
     """
     to_encode = data.copy()
     
     # Refresh token sống lâu hơn (7 ngày)
     expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire})
+    
+    # Thêm thông tin vào payload
+    to_encode.update({
+        "exp": expire,              # Expiration time
+        "type": "refresh"           # Token type: refresh (quan trọng!)
+    })
     
     encoded_jwt = jwt.encode(
         to_encode, 
