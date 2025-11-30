@@ -32,16 +32,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # AI Services
-    OPENAI_API_KEY: Optional[str] = None
-    GEMINI_API_KEY: Optional[str] = None
-    AI_MODEL: str = "gpt-3.5-turbo"
-    AI_TEMPERATURE: float = 0.7
-    AI_MAX_TOKENS: int = 1000
+    # AI Services - OhMyGPT (OpenAI-compatible API)
+    OHMYGPT_API_KEY: Optional[str] = None
+    OHMYGPT_BASE_URL: str = "https://api.ohmygpt.com/v1"
+    OHMYGPT_MODEL: str = "gpt-4o-mini"
+    OHMYGPT_TEMPERATURE: float = 0.7
+    OHMYGPT_MAX_TOKENS: int = 2000
     
-    # Speech Services
-    SPEECH_TO_TEXT_SERVICE: str = "openai"
-    TEXT_TO_SPEECH_SERVICE: str = "openai"
+    # Deepgram API - Speech Recognition & Pronunciation
+    DEEPGRAM_API_KEY: Optional[str] = None
+    DEEPGRAM_MODEL: str = "nova-2"
+    DEEPGRAM_SMART_FORMAT: bool = True
+    DEEPGRAM_PUNCTUATE: bool = True
+    DEEPGRAM_LANGUAGE: str = "en-US"
+
+
     
     # File Upload
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB

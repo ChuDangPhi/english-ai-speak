@@ -2,6 +2,7 @@
 Dependencies - Các hàm dependency dùng để bảo vệ routes
 FastAPI sẽ tự động gọi các hàm này TRƯỚC KHI endpoint chính chạy
 """
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -81,7 +82,7 @@ def get_current_user(
         # ===== BƯỚC 2: LẤY USER_ID TỪ PAYLOAD =====
         # Payload structure: {"sub": "user_id", "email": "...", "exp": ...}
         # "sub" (subject) là convention để lưu user identifier
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         
         if user_id is None:
             raise credentials_exception
@@ -101,7 +102,7 @@ def get_current_user(
         raise credentials_exception
     
     # ===== BƯỚC 4: CHECK USER ACTIVE =====
-    if not user.is_active:
+    if user.is_active is not True:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled"
@@ -162,7 +163,7 @@ def get_current_active_user(
 def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db)
-) -> User | None:
+) -> Optional[User]:
     """
     Dependency để lấy user hiện tại HOẶC None nếu không có token
     
@@ -170,7 +171,7 @@ def get_current_user_optional(
     
     Example:
         @router.get("/posts")
-        def get_posts(current_user: User | None = Depends(get_current_user_optional)):
+        def get_posts(current_user: Optional[User] = Depends(get_current_user_optional)):
             if current_user:
                 # Logged in: Show personalized posts
                 return get_personalized_posts(current_user)
@@ -183,7 +184,7 @@ def get_current_user_optional(
         db: Database session
     
     Returns:
-        User | None: User nếu có token hợp lệ, None nếu không có token
+        Optional[User]: User nếu có token hợp lệ, None nếu không có token
     """
     
     if credentials is None:
@@ -196,14 +197,14 @@ def get_current_user_optional(
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         
         if user_id is None:
             return None
         
         user = db.query(User).filter(User.id == user_id).first()
         
-        if user and user.is_active:
+        if user and user.is_active is True:
             return user
         
         return None
