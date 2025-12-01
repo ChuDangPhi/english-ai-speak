@@ -51,8 +51,14 @@ def get_db() -> Generator:
 def init_db():
     """Initialize database - create all tables"""
     try:
-        # Import model User để SQLAlchemy biết
-        from app.models.user import User
+        # Import tất cả models để SQLAlchemy biết
+        from app.models import (
+            User, UserSettings,
+            Topic, Vocabulary,
+            Lesson, LessonVocabulary, PronunciationExercise, ConversationTemplate,
+            LessonAttempt, PronunciationAttempt, VocabularyMatchingResult, ConversationMessage,
+            UserLessonProgress, UserProgress, UserVocabulary, DailyStats, UserStreak
+        )
         
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Database tables created successfully")

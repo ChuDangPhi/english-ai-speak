@@ -54,7 +54,7 @@ class UserResponse(BaseModel):
     Schema trả về thông tin user (KHÔNG bao gồm password_hash)
     Server trả về client
     """
-    id: str = Field(..., description="UUID của user")
+    id: int = Field(..., description="ID của user")
     email: str = Field(..., description="Email")
     full_name: Optional[str] = Field(None, description="Họ tên")
     avatar_url: Optional[str] = Field(None, description="URL avatar")

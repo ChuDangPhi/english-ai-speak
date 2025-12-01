@@ -81,7 +81,7 @@ def register(
         db.refresh(new_user)  # Lấy data mới nhất từ DB (bao gồm id, created_at...)
         
         # Bước 4: Tạo JWT tokens
-        token_data = {"sub": new_user.id, "email": new_user.email}
+        token_data = {"sub": str(new_user.id), "email": new_user.email}
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
         
@@ -169,7 +169,7 @@ def login(
         )
     
     # Bước 3: Tạo JWT tokens
-    token_data = {"sub": user.id, "email": user.email}
+    token_data = {"sub": str(user.id), "email": user.email}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
     
