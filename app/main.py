@@ -113,8 +113,22 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 from app.routers import auth
+from app.routers import topics
+from app.routers import lessons
+from app.routers import vocabulary
+from app.routers import attempts
+from app.routers import pronunciation
+from app.routers import conversation
+from app.routers import progress
 
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(topics.router, prefix="/api/v1", tags=["Topics"])
+app.include_router(lessons.router, prefix="/api/v1", tags=["Lessons"])
+app.include_router(vocabulary.router, prefix="/api/v1", tags=["Vocabulary"])
+app.include_router(attempts.router, prefix="/api/v1", tags=["Attempts"])
+app.include_router(pronunciation.router, prefix="/api/v1", tags=["Pronunciation"])
+app.include_router(conversation.router, prefix="/api/v1", tags=["Conversation"])
+app.include_router(progress.router, prefix="/api/v1", tags=["Progress"])
 
 # Mount static files
 static_path = Path("app/static")

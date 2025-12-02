@@ -30,7 +30,7 @@ class Lesson(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
     topic_id = Column(BigInteger, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False, index=True)
-    lesson_type = Column(Enum(LessonType), nullable=False, index=True)
+    lesson_type = Column(Enum(LessonType, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     lesson_order = Column(Integer, nullable=False)
@@ -81,7 +81,7 @@ class PronunciationExercise(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
     lesson_id = Column(BigInteger, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_type = Column(Enum(ExerciseType), nullable=False)
+    exercise_type = Column(Enum(ExerciseType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     content = Column(Text, nullable=False)  # Nội dung cần đọc (word/phrase/sentence)
     phonetic = Column(String(255), nullable=True)
     audio_url = Column(String(500), nullable=True)  # Audio mẫu
