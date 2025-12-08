@@ -1,10 +1,17 @@
 """
 User model - Định nghĩa bảng users trong database
 """
+from enum import Enum
 from sqlalchemy import Column, String, Boolean, DateTime, BigInteger, Integer, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+
+class UserRole(str, Enum):
+    """Enum cho role của user"""
+    ADMIN = "admin"
+    USER = "user"
 
 
 class User(Base):
@@ -45,6 +52,9 @@ class User(Base):
     
     # Trạng thái tài khoản - Mặc định là active (True)
     is_active = Column(Boolean, default=True, nullable=True)
+    
+    # Role - admin hoặc user, mặc định là user
+    role = Column(String(20), default="user", nullable=False)
     
     # Thời gian tạo - Tự động lấy thời gian hiện tại
     created_at = Column(DateTime, server_default=func.now(), nullable=True)

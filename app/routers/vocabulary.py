@@ -31,7 +31,7 @@ from app.schemas.vocabulary import (
     VocabularyMatchingResultResponse, VocabularyWithUserProgress,
     UserVocabularySaveRequest, UserVocabularyListResponse
 )
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_admin
 
 router = APIRouter(
     prefix="/vocabulary",
@@ -311,10 +311,10 @@ def get_vocabulary_list(
 def create_vocabulary(
     vocab_data: VocabularyCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được tạo vocabulary
 ):
     """
-    ➕ THÊM TỪ VỰNG MỚI (Admin)
+    ➕ THÊM TỪ VỰNG MỚI (Admin only)
     
     Use case:
     - Admin thêm từ "restaurant" với nghĩa, phiên âm, ví dụ
@@ -364,10 +364,10 @@ def update_vocabulary(
     vocabulary_id: int,
     vocab_data: VocabularyUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được sửa vocabulary
 ):
     """
-    ✏️ CẬP NHẬT TỪ VỰNG (Admin)
+    ✏️ CẬP NHẬT TỪ VỰNG (Admin only)
     """
     vocab = db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
     if not vocab:
@@ -387,10 +387,10 @@ def update_vocabulary(
 def delete_vocabulary(
     vocabulary_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được xóa vocabulary
 ):
     """
-    🗑️ XÓA TỪ VỰNG (Admin)
+    🗑️ XÓA TỪ VỰNG (Admin only)
     """
     vocab = db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
     if not vocab:

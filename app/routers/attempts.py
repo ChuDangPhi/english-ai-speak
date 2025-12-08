@@ -17,8 +17,11 @@ Flow khi user học 1 lesson:
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import (
@@ -69,81 +72,95 @@ def start_lesson_attempt(
     - attempt_id: Dùng cho các API submit sau đó
     - attempt_number: Lần thứ mấy user làm bài này
     """
-    # 1. Check lesson exists
-    lesson = db.query(Lesson).filter(
-        Lesson.id == request.lesson_id,
-        Lesson.is_active == True
-    ).first()
-    
-    if not lesson:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bài học không tồn tại"
-        )
-    
-    # 2. Check access permission (similar to lessons router)
-    user_progress = db.query(UserLessonProgress).filter(
-        UserLessonProgress.user_id == current_user.id,
-        UserLessonProgress.lesson_id == request.lesson_id
-    ).first()
-    
-    if user_progress and user_progress.status == LessonStatus.LOCKED:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bài học này chưa được mở khóa"
-        )
-    
-    # 3. Count previous attempts
-    previous_attempts = db.query(LessonAttempt).filter(
-        LessonAttempt.user_id == current_user.id,
-        LessonAttempt.lesson_id == request.lesson_id
-    ).count()
-    
-    attempt_number = previous_attempts + 1
-    
-    # 4. Create new attempt
-    new_attempt = LessonAttempt(
-        user_id=current_user.id,
-        lesson_id=request.lesson_id,
-        attempt_number=attempt_number,
-        started_at=datetime.utcnow(),
-        is_completed=False,
-        is_passed=False
-    )
-    
-    db.add(new_attempt)
-    
-    # 5. Update user_lesson_progress
-    if not user_progress:
-        user_progress = UserLessonProgress(
+    try:
+        logger.info(f"Creating attempt for lesson_id={request.lesson_id}, user_id={current_user.id}")
+        
+        # 1. Check lesson exists
+        lesson = db.query(Lesson).filter(
+            Lesson.id == request.lesson_id,
+            Lesson.is_active == True
+        ).first()
+        
+        if not lesson:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bài học không tồn tại"
+            )
+        
+        logger.info(f"Found lesson: {lesson.title}")
+        
+        # 2. Skip access check - allow all lessons
+        # (Đã tạm bỏ kiểm tra khóa bài)
+        
+        # 3. Count previous attempts
+        previous_attempts = db.query(LessonAttempt).filter(
+            LessonAttempt.user_id == current_user.id,
+            LessonAttempt.lesson_id == request.lesson_id
+        ).count()
+        
+        attempt_number = previous_attempts + 1
+        logger.info(f"Attempt number: {attempt_number}")
+        
+        # 4. Create new attempt
+        now = datetime.now(timezone.utc)
+        new_attempt = LessonAttempt(
             user_id=current_user.id,
             lesson_id=request.lesson_id,
-            status=LessonStatus.IN_PROGRESS,
-            total_attempts=1
+            attempt_number=attempt_number,
+            started_at=now,
+            is_completed=False,
+            is_passed=False
         )
-        db.add(user_progress)
-    else:
-        user_progress.status = LessonStatus.IN_PROGRESS
-        user_progress.total_attempts += 1
-        user_progress.last_attempt_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(new_attempt)
-    
-    # 6. Return response
-    lesson_type = lesson.lesson_type.value if hasattr(lesson.lesson_type, 'value') else lesson.lesson_type
-    
-    return LessonAttemptStartResponse(
-        attempt_id=new_attempt.id,
-        lesson_id=lesson.id,
-        lesson_type=lesson_type,
-        lesson_title=lesson.title,
-        attempt_number=attempt_number,
-        started_at=new_attempt.started_at,
-        instructions=lesson.instructions,
-        passing_score=float(lesson.passing_score) if lesson.passing_score else 70.0,
-        estimated_minutes=lesson.estimated_minutes
-    )
+        
+        db.add(new_attempt)
+        
+        # 5. Update user_lesson_progress
+        user_progress = db.query(UserLessonProgress).filter(
+            UserLessonProgress.user_id == current_user.id,
+            UserLessonProgress.lesson_id == request.lesson_id
+        ).first()
+        
+        if not user_progress:
+            user_progress = UserLessonProgress(
+                user_id=current_user.id,
+                lesson_id=request.lesson_id,
+                status=LessonStatus.IN_PROGRESS,
+                total_attempts=1
+            )
+            db.add(user_progress)
+        else:
+            user_progress.status = LessonStatus.IN_PROGRESS
+            user_progress.total_attempts += 1
+            user_progress.last_attempt_at = now
+        
+        db.commit()
+        db.refresh(new_attempt)
+        
+        logger.info(f"Created attempt: {new_attempt.id}")
+        
+        # 6. Return response
+        lesson_type = lesson.lesson_type.value if hasattr(lesson.lesson_type, 'value') else lesson.lesson_type
+        
+        return LessonAttemptStartResponse(
+            attempt_id=new_attempt.id,
+            lesson_id=lesson.id,
+            lesson_type=lesson_type,
+            lesson_title=lesson.title,
+            attempt_number=attempt_number,
+            started_at=new_attempt.started_at,
+            instructions=lesson.instructions,
+            passing_score=float(lesson.passing_score) if lesson.passing_score else 70.0,
+            estimated_minutes=lesson.estimated_minutes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating attempt: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi tạo phiên làm bài: {str(e)}"
+        )
 
 
 # ============================================================

@@ -10,10 +10,10 @@ import enum
 
 class LessonStatus(str, enum.Enum):
     """Trạng thái bài học của user"""
-    LOCKED = "locked"           # Chưa mở khóa
-    AVAILABLE = "available"     # Đã mở, chưa học
-    IN_PROGRESS = "in_progress" # Đang học
-    COMPLETED = "completed"     # Đã hoàn thành
+    LOCKED = "LOCKED"           # Chưa mở khóa
+    AVAILABLE = "AVAILABLE"     # Đã mở, chưa học
+    IN_PROGRESS = "IN_PROGRESS" # Đang học
+    COMPLETED = "COMPLETED"     # Đã hoàn thành
 
 
 class UserLessonProgress(Base):

@@ -31,7 +31,7 @@ from app.schemas.lesson import (
     ConversationTemplateResponse
 )
 from app.schemas.vocabulary import VocabularyForMatchingGame
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_admin
 
 router = APIRouter(
     prefix="/lessons",
@@ -77,30 +77,8 @@ def get_lesson_detail(
             detail="Bài học không tồn tại"
         )
     
-    # 2. Check user access (lesson phải available hoặc completed)
-    user_progress = db.query(UserLessonProgress).filter(
-        UserLessonProgress.user_id == current_user.id,
-        UserLessonProgress.lesson_id == lesson_id
-    ).first()
-    
-    # Nếu chưa có progress → Kiểm tra có phải lesson đầu tiên không
-    if not user_progress:
-        # Lesson đầu tiên của topic luôn available
-        first_lesson = db.query(Lesson).filter(
-            Lesson.topic_id == lesson.topic_id,
-            Lesson.is_active == True
-        ).order_by(Lesson.lesson_order).first()
-        
-        if lesson.id != first_lesson.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Bạn cần hoàn thành bài học trước đó để mở khóa bài này"
-            )
-    elif user_progress.status.value == "locked":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bài học này chưa được mở khóa"
-        )
+    # NOTE: Tạm bỏ kiểm tra quyền truy cập - cho phép truy cập mọi lesson
+    # TODO: Bật lại sau khi test xong
     
     # 3. Return data based on lesson_type
     lesson_type = lesson.lesson_type.value if hasattr(lesson.lesson_type, 'value') else lesson.lesson_type
@@ -286,10 +264,10 @@ def get_mixed_lesson(lesson: Lesson, db: Session):
 def create_lesson(
     lesson_data: LessonCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được tạo lesson
 ):
     """
-    ➕ TẠO BÀI HỌC MỚI (Admin)
+    ➕ TẠO BÀI HỌC MỚI (Admin only)
     
     Logic:
     1. Tạo lesson trong topic
@@ -341,10 +319,10 @@ def add_vocabulary_to_lesson(
     lesson_id: int,
     vocabulary_ids: List[int],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được thêm vocabulary
 ):
     """
-    ➕ THÊM TỪ VỰNG VÀO LESSON (Admin)
+    ➕ THÊM TỪ VỰNG VÀO LESSON (Admin only)
     
     Logic:
     - Thêm liên kết lesson_vocabulary cho mỗi vocabulary_id

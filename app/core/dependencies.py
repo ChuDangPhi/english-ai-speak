@@ -211,3 +211,48 @@ def get_current_user_optional(
         
     except JWTError:
         return None
+
+
+# ============= GET CURRENT ADMIN DEPENDENCY =============
+
+def get_current_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Dependency để kiểm tra user có phải admin không
+    
+    WORKFLOW:
+    1. Lấy current_user từ get_current_user()
+    2. Kiểm tra user.role == "admin"
+    3. Raise 403 nếu không phải admin
+    
+    Use case: Bảo vệ các API chỉ dành cho admin
+    - Tạo/sửa/xóa Topic
+    - Tạo/sửa/xóa Lesson
+    - Quản lý users
+    
+    Example:
+        @router.post("/topics")
+        def create_topic(
+            topic_data: TopicCreate,
+            admin: User = Depends(get_current_admin)
+        ):
+            # Chỉ admin mới vào được đây
+            return create_new_topic(topic_data)
+    
+    Args:
+        current_user: User từ get_current_user()
+    
+    Returns:
+        User: User object nếu là admin
+    
+    Raises:
+        HTTPException 403: Nếu user không phải admin
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required. You don't have permission to perform this action."
+        )
+    
+    return current_user

@@ -24,7 +24,7 @@ from app.schemas.topic import (
     TopicListResponse, TopicWithProgressResponse, TopicFilter
 )
 from app.schemas.lesson import TopicDetailResponse, LessonWithProgressResponse
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_admin
 
 router = APIRouter(
     prefix="/topics",
@@ -305,10 +305,10 @@ def get_topic_detail(
 def create_topic(
     topic_data: TopicCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # TODO: Check admin role
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được tạo topic
 ):
     """
-    ➕ TẠO CHỦ ĐỀ MỚI (Admin)
+    ➕ TẠO CHỦ ĐỀ MỚI (Admin only)
     
     Logic:
     1. Validate dữ liệu đầu vào
@@ -342,10 +342,10 @@ def update_topic(
     topic_id: int,
     topic_data: TopicUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # TODO: Check admin role
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được sửa topic
 ):
     """
-    ✏️ CẬP NHẬT CHỦ ĐỀ (Admin)
+    ✏️ CẬP NHẬT CHỦ ĐỀ (Admin only)
     """
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
@@ -366,10 +366,10 @@ def update_topic(
 def delete_topic(
     topic_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # TODO: Check admin role
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được xóa topic
 ):
     """
-    🗑️ XÓA CHỦ ĐỀ (Admin) - Soft delete
+    🗑️ XÓA CHỦ ĐỀ (Admin only) - Soft delete
     """
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
