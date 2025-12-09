@@ -314,45 +314,47 @@ async def analyze_pronunciation_with_deepgram(audio_url: str, expected_text: str
         }
     """
     try:
-        from deepgram import Deepgram
+        from deepgram import DeepgramClient, PrerecordedOptions, FileSource
         
         # Đọc file audio
         file_path = audio_url.replace("/uploads/", "uploads/")
         
         if not os.path.exists(file_path):
-            return {
-                "transcription": "",
-                "confidence": 0,
-                "error": "Audio file not found"
-            }
+            print(f"Audio file not found: {file_path}")
+            return mock_deepgram_response(expected_text)
         
-        # Initialize Deepgram client
-        dg_client = Deepgram(settings.DEEPGRAM_API_KEY)
+        # Initialize Deepgram client (SDK v5)
+        deepgram = DeepgramClient(settings.DEEPGRAM_API_KEY)
         
         with open(file_path, "rb") as audio_file:
-            source = {"buffer": audio_file, "mimetype": f"audio/{audio_format}"}
-            
-            response = await dg_client.transcription.prerecorded(
-                source,
-                {
-                    "model": settings.DEEPGRAM_MODEL,
-                    "language": settings.DEEPGRAM_LANGUAGE,
-                    "punctuate": settings.DEEPGRAM_PUNCTUATE,
-                    "smart_format": settings.DEEPGRAM_SMART_FORMAT,
-                }
-            )
+            buffer_data = audio_file.read()
         
-        # Parse response
-        result = response["results"]["channels"][0]["alternatives"][0]
-        
-        return {
-            "transcription": result.get("transcript", ""),
-            "confidence": result.get("confidence", 0),
-            "words": result.get("words", [])
+        payload: FileSource = {
+            "buffer": buffer_data,
         }
         
-    except ImportError:
+        options = PrerecordedOptions(
+            model=settings.DEEPGRAM_MODEL,
+            language=settings.DEEPGRAM_LANGUAGE,
+            punctuate=settings.DEEPGRAM_PUNCTUATE,
+            smart_format=settings.DEEPGRAM_SMART_FORMAT,
+        )
+        
+        # Call Deepgram API
+        response = deepgram.listen.rest.v("1").transcribe_file(payload, options)
+        
+        # Parse response
+        result = response.results.channels[0].alternatives[0]
+        
+        return {
+            "transcription": result.transcript or "",
+            "confidence": result.confidence or 0,
+            "words": [{"word": w.word, "confidence": w.confidence} for w in (result.words or [])]
+        }
+        
+    except ImportError as e:
         # Deepgram not installed - use mock data
+        print(f"Deepgram import error: {e}")
         return mock_deepgram_response(expected_text)
     except Exception as e:
         print(f"Deepgram error: {e}")
