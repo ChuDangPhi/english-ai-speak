@@ -21,6 +21,7 @@ Running tests:
 """
 import pytest
 import base64
+import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -41,6 +42,12 @@ test_engine = create_engine(
     connect_args={"check_same_thread": False}
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+
+# Helper function for generating test IDs compatible with BigInteger
+def generate_test_id() -> int:
+    """Generate a unique ID for SQLite compatibility with BigInteger columns"""
+    return abs(hash(str(uuid.uuid4()))) % (10 ** 15)
 
 
 @pytest.fixture(scope="function")
@@ -78,10 +85,8 @@ def client(db_session):
 @pytest.fixture
 def test_user(db_session):
     """Create a test user"""
-    # Generate a unique ID for SQLite compatibility
-    import uuid
     user = User(
-        id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),  # Generate a numeric ID for BigInteger
+        id=generate_test_id(),
         email="test@example.com",
         password_hash=hash_password("testpassword123"),
         full_name="Test User",
@@ -107,9 +112,8 @@ def auth_headers(test_user):
 @pytest.fixture
 def test_topic(db_session):
     """Create a test topic"""
-    import uuid
     topic = Topic(
-        id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+        id=generate_test_id(),
         title="Pronunciation Practice",
         description="Test pronunciation topic",
         difficulty_level="beginner",
@@ -125,9 +129,8 @@ def test_topic(db_session):
 @pytest.fixture
 def test_lesson(db_session, test_topic):
     """Create a test lesson"""
-    import uuid
     lesson = Lesson(
-        id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+        id=generate_test_id(),
         topic_id=test_topic.id,
         lesson_type=LessonType.PRONUNCIATION,
         title="Basic Pronunciation",
@@ -146,9 +149,8 @@ def test_lesson(db_session, test_topic):
 @pytest.fixture
 def test_exercise(db_session, test_lesson):
     """Create a test pronunciation exercise"""
-    import uuid
     exercise = PronunciationExercise(
-        id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+        id=generate_test_id(),
         lesson_id=test_lesson.id,
         exercise_type=ExerciseType.WORD,
         content="restaurant",
@@ -166,9 +168,8 @@ def test_exercise(db_session, test_lesson):
 @pytest.fixture
 def test_lesson_attempt(db_session, test_user, test_lesson):
     """Create a test lesson attempt"""
-    import uuid
     attempt = LessonAttempt(
-        id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+        id=generate_test_id(),
         user_id=test_user.id,
         lesson_id=test_lesson.id,
         attempt_number=1,
@@ -180,13 +181,15 @@ def test_lesson_attempt(db_session, test_user, test_lesson):
     return attempt
 
 
+# Minimal valid WebM audio header for testing (base64 encoded)
+# This represents the start of a WebM container with minimal data
+SAMPLE_WEBM_AUDIO = b"GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibWKHEQAJ"
+
+
 @pytest.fixture
 def sample_audio_base64():
     """Generate a sample base64 encoded audio for testing"""
-    # Create a minimal valid WebM audio header (simplified for testing)
-    # In production, this would be a real audio file
-    sample_audio = b"GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibWKHEQAJ"
-    return f"data:audio/webm;base64,{base64.b64encode(sample_audio).decode()}"
+    return f"data:audio/webm;base64,{base64.b64encode(SAMPLE_WEBM_AUDIO).decode()}"
 
 
 # ============================================================
@@ -430,9 +433,8 @@ class TestPronunciationSummary:
     ):
         """Test successful summary retrieval"""
         # Create some pronunciation attempts first
-        import uuid
         attempt1 = PronunciationAttempt(
-            id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+            id=generate_test_id(),
             lesson_attempt_id=test_lesson_attempt.id,
             exercise_id=test_exercise.id,
             audio_url="/test/audio1.webm",
@@ -540,9 +542,8 @@ class TestPronunciationSummary:
     ):
         """Test summary with multiple exercises"""
         # Create additional exercises
-        import uuid
         exercise2 = PronunciationExercise(
-            id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+            id=generate_test_id(),
             lesson_id=test_lesson.id,
             exercise_type=ExerciseType.WORD,
             content="beautiful",
@@ -556,7 +557,7 @@ class TestPronunciationSummary:
         
         # Create attempts for both exercises
         attempt1 = PronunciationAttempt(
-            id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+            id=generate_test_id(),
             lesson_attempt_id=test_lesson_attempt.id,
             exercise_id=test_exercise.id,  # Use test_exercise fixture
             audio_url="/test/audio1.webm",
@@ -569,7 +570,7 @@ class TestPronunciationSummary:
         )
         
         attempt2 = PronunciationAttempt(
-            id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),
+            id=generate_test_id(),
             lesson_attempt_id=test_lesson_attempt.id,
             exercise_id=exercise2.id,
             audio_url="/test/audio2.webm",
@@ -611,9 +612,8 @@ class TestPronunciationSummary:
     ):
         """Test summary retrieval by different user"""
         # Create another user
-        import uuid
         other_user = User(
-            id=abs(hash(str(uuid.uuid4()))) % (10 ** 15),  # Generate a numeric ID for BigInteger
+            id=generate_test_id(),
             email="other@example.com",
             password_hash=hash_password("password123"),
             full_name="Other User",
