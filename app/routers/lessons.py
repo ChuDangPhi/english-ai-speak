@@ -215,12 +215,29 @@ def get_conversation_lesson(lesson: Lesson, db: Session) -> ConversationLessonDe
     
     template_response = None
     if template:
+        # Parse JSON strings if needed
+        import json
+        
+        starter_prompts = template.starter_prompts
+        if isinstance(starter_prompts, str):
+            try:
+                starter_prompts = json.loads(starter_prompts)
+            except:
+                starter_prompts = []
+        
+        suggested_topics = template.suggested_topics
+        if isinstance(suggested_topics, str):
+            try:
+                suggested_topics = json.loads(suggested_topics)
+            except:
+                suggested_topics = []
+        
         template_response = ConversationTemplateResponse(
             id=template.id,
             ai_role=template.ai_role,
             scenario_context=template.scenario_context,
-            starter_prompts=template.starter_prompts,
-            suggested_topics=template.suggested_topics,
+            starter_prompts=starter_prompts or [],
+            suggested_topics=suggested_topics or [],
             min_turns=template.min_turns,
             max_duration_minutes=template.max_duration_minutes
         )
