@@ -1,5 +1,5 @@
 """
-Conversation Service - Xử lý hội thoại với AI (OhMyGPT)
+Conversation Service - Xử lý hội thoại với AI (Groq/OpenAI-compatible)
 
 === CHỨC NĂNG ===
 1. Generate opening message cho conversation
@@ -7,9 +7,10 @@ Conversation Service - Xử lý hội thoại với AI (OhMyGPT)
 3. Analyze user message (grammar, vocabulary)
 4. Generate conversation summary và feedback
 
-=== OHMYGPT API ===
-- Base URL: https://api.ohmygpt.com/v1 (hoặc custom)
-- Model: gpt-3.5-turbo / gpt-4
+=== AI API (Groq/OpenAI-compatible) ===
+- Groq: https://api.groq.com/openai/v1
+- OhMyGPT: https://api.ohmygpt.com/v1
+- OpenAI: https://api.openai.com/v1
 - Compatible với OpenAI API format
 
 === CONVERSATION FLOW ===
@@ -57,7 +58,7 @@ class ConversationContext:
 
 
 class ConversationService:
-    """Service xử lý hội thoại với AI"""
+    """Service xử lý hội thoại với AI (Groq/OpenAI-compatible)"""
     
     def __init__(self):
         self.api_key = settings.OHMYGPT_API_KEY
@@ -66,7 +67,7 @@ class ConversationService:
         self.temperature = settings.OHMYGPT_TEMPERATURE
         self.max_tokens = settings.OHMYGPT_MAX_TOKENS
         
-        # Initialize OpenAI client (compatible with OhMyGPT)
+        # Initialize OpenAI client (compatible with Groq/OhMyGPT/OpenAI)
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url

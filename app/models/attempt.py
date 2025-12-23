@@ -119,7 +119,7 @@ class ConversationMessage(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
     lesson_attempt_id = Column(BigInteger, ForeignKey("lesson_attempts.id", ondelete="CASCADE"), nullable=False, index=True)
     message_order = Column(Integer, nullable=False)  # Thứ tự tin nhắn
-    speaker = Column(Enum(SpeakerType), nullable=False)  # user hoặc ai
+    speaker = Column(Enum(SpeakerType, values_callable=lambda x: [e.value for e in x]), nullable=False)  # user hoặc ai
     message_text = Column(Text, nullable=False)
     audio_url = Column(String(500), nullable=True)  # Audio nếu user nói
     grammar_errors = Column(JSON, nullable=True)  # Lỗi ngữ pháp phát hiện được

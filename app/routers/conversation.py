@@ -1,5 +1,5 @@
 """
-Conversation Router - API endpoints cho Hội thoại với AI
+Conversation Router - API endpoints cho Hội thoại với AI (Groq/OpenAI-compatible)
 
 === GIẢI QUYẾT VẤN ĐỀ GÌ? ===
 1. Bắt đầu conversation với AI theo scenario
@@ -12,6 +12,11 @@ Conversation Router - API endpoints cho Hội thoại với AI
 2. POST /conversation/message → User gửi tin, AI reply
 3. Lặp lại bước 2 đến khi đủ min_turns
 4. POST /conversation/end → Tổng kết, chấm điểm
+
+=== AI API (Groq) ===
+- Base URL: https://api.groq.com/openai/v1
+- Model: llama-3.3-70b-versatile (hoặc model khác)
+- Compatible với OpenAI API format
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -70,77 +75,115 @@ async def start_conversation(
     - scenario: "You are ordering food..."
     - opening: "Good evening! Welcome to our restaurant. How can I help you?"
     """
-    # 1. Get lesson
-    lesson = db.query(Lesson).filter(
-        Lesson.id == request.lesson_id,
-        Lesson.is_active == True
-    ).first()
+    print(f"🚀 Starting conversation for lesson_id={request.lesson_id}, user_id={current_user.id}")
     
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Bài học không tồn tại")
-    
-    # 2. Get conversation template
-    template = db.query(ConversationTemplate).filter(
-        ConversationTemplate.lesson_id == request.lesson_id
-    ).first()
-    
-    if not template:
-        raise HTTPException(status_code=404, detail="Không tìm thấy template hội thoại")
-    
-    # 3. Create lesson attempt
-    previous_attempts = db.query(LessonAttempt).filter(
-        LessonAttempt.user_id == current_user.id,
-        LessonAttempt.lesson_id == request.lesson_id
-    ).count()
-    
-    lesson_attempt = LessonAttempt(
-        user_id=current_user.id,
-        lesson_id=request.lesson_id,
-        attempt_number=previous_attempts + 1,
-        started_at=datetime.utcnow(),
-        conversation_turns=0,
-        is_completed=False
-    )
-    db.add(lesson_attempt)
-    db.flush()  # Get ID
-    
-    # 4. Generate AI opening message
-    opening_text = await generate_ai_opening(template)
-    
-    # 5. Save opening message
-    opening_message = ConversationMessage(
-        lesson_attempt_id=lesson_attempt.id,
-        message_order=1,
-        speaker=SpeakerType.AI,
-        message_text=opening_text
-    )
-    db.add(opening_message)
-    db.commit()
-    db.refresh(opening_message)
-    
-    # 6. Return response
-    return ConversationStartResponse(
-        lesson_attempt_id=lesson_attempt.id,
-        lesson_id=lesson.id,
-        lesson_title=lesson.title,
-        ai_role=template.ai_role,
-        scenario_context=template.scenario_context,
-        starter_prompts=template.starter_prompts,
-        suggested_topics=template.suggested_topics,
-        min_turns=template.min_turns,
-        max_duration_minutes=template.max_duration_minutes,
-        opening_message=ConversationMessageResponse(
-            id=opening_message.id,
-            message_order=opening_message.message_order,
-            speaker="ai",
-            message_text=opening_message.message_text,
-            audio_url=None,
-            grammar_errors=None,
-            vocabulary_used=None,
-            sentiment=None,
-            created_at=opening_message.created_at
+    try:
+        # 1. Get lesson
+        lesson = db.query(Lesson).filter(
+            Lesson.id == request.lesson_id,
+            Lesson.is_active == True
+        ).first()
+        
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Bài học không tồn tại")
+        
+        print(f"📚 Found lesson: {lesson.title}")
+        
+        # 2. Get conversation template
+        template = db.query(ConversationTemplate).filter(
+            ConversationTemplate.lesson_id == request.lesson_id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Không tìm thấy template hội thoại")
+        
+        print(f"🎭 Found template: ai_role={template.ai_role}")
+        
+        # 3. Create lesson attempt
+        previous_attempts = db.query(LessonAttempt).filter(
+            LessonAttempt.user_id == current_user.id,
+            LessonAttempt.lesson_id == request.lesson_id
+        ).count()
+        
+        lesson_attempt = LessonAttempt(
+            user_id=current_user.id,
+            lesson_id=request.lesson_id,
+            attempt_number=previous_attempts + 1,
+            started_at=datetime.utcnow(),
+            conversation_turns=0,
+            is_completed=False
         )
-    )
+        db.add(lesson_attempt)
+        db.flush()  # Get ID
+        
+        print(f"📝 Created lesson_attempt: id={lesson_attempt.id}")
+        
+        # 4. Generate AI opening message
+        opening_text = await generate_ai_opening(template)
+        
+        print(f"💬 Opening message: {opening_text[:50]}...")
+        
+        # 5. Save opening message
+        opening_message = ConversationMessage(
+            lesson_attempt_id=lesson_attempt.id,
+            message_order=1,
+            speaker=SpeakerType.AI,
+            message_text=opening_text
+        )
+        db.add(opening_message)
+        db.commit()
+        db.refresh(opening_message)
+        
+        print(f"✅ Saved opening message: id={opening_message.id}")
+        
+        # Parse JSON strings if needed
+        import json
+        
+        starter_prompts = template.starter_prompts
+        if isinstance(starter_prompts, str):
+            try:
+                starter_prompts = json.loads(starter_prompts)
+            except:
+                starter_prompts = []
+        
+        suggested_topics = template.suggested_topics
+        if isinstance(suggested_topics, str):
+            try:
+                suggested_topics = json.loads(suggested_topics)
+            except:
+                suggested_topics = []
+        
+        # 6. Return response
+        return ConversationStartResponse(
+            lesson_attempt_id=lesson_attempt.id,
+            lesson_id=lesson.id,
+            lesson_title=lesson.title,
+            ai_role=template.ai_role,
+            scenario_context=template.scenario_context,
+            starter_prompts=starter_prompts or [],
+            suggested_topics=suggested_topics or [],
+            min_turns=template.min_turns,
+            max_duration_minutes=template.max_duration_minutes,
+            opening_message=ConversationMessageResponse(
+                id=opening_message.id,
+                message_order=opening_message.message_order,
+                speaker="ai",
+                message_text=opening_message.message_text,
+                audio_url=None,
+                grammar_errors=None,
+                vocabulary_used=None,
+                sentiment=None,
+                created_at=opening_message.created_at
+            )
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in start_conversation: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================
@@ -158,7 +201,7 @@ async def send_message(
     Logic:
     1. Lưu tin nhắn của user
     2. Phân tích grammar, vocabulary của user
-    3. Gọi AI (OhMyGPT) để generate reply
+    3. Gọi AI (Groq) để generate reply
     4. Lưu tin nhắn AI
     5. Trả về AI reply + phân tích user message
     
@@ -461,7 +504,12 @@ def get_conversation_history(
 # ============================================================
 
 async def generate_ai_opening(template: ConversationTemplate) -> str:
-    """Generate tin nhắn mở đầu từ AI"""
+    """Generate tin nhắn mở đầu từ AI (Groq/OpenAI-compatible)"""
+    
+    print(f"🎭 Generating AI opening for role: {template.ai_role}")
+    print(f"📍 API Key: {settings.OHMYGPT_API_KEY[:20] if settings.OHMYGPT_API_KEY else 'NOT SET'}...")
+    print(f"🌐 Base URL: {settings.OHMYGPT_BASE_URL}")
+    print(f"🤖 Model: {settings.OHMYGPT_MODEL}")
     
     try:
         from openai import OpenAI
@@ -478,6 +526,8 @@ Generate a friendly opening message to start the conversation.
 Keep it simple, 1-2 sentences, appropriate for English learners.
 Respond in English only."""
         
+        print(f"📝 Calling Groq API...")
+        
         response = client.chat.completions.create(
             model=settings.OHMYGPT_MODEL,
             messages=[
@@ -488,16 +538,22 @@ Respond in English only."""
             max_tokens=100
         )
         
-        return response.choices[0].message.content
+        result = response.choices[0].message.content
+        print(f"✅ Groq Response: {result}")
+        return result
         
     except Exception as e:
-        print(f"AI Error: {e}")
+        print(f"❌ Groq API Error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         # Fallback opening
         return f"Hello! I'm your {template.ai_role}. How can I help you today?"
 
 
 async def generate_ai_reply(template: ConversationTemplate, history: list, user_message: str) -> str:
-    """Generate AI reply dựa vào context và history"""
+    """Generate AI reply dựa vào context và history (Groq/OpenAI-compatible)"""
+    
+    print(f"💬 Generating AI reply for message: {user_message[:50]}...")
     
     try:
         from openai import OpenAI

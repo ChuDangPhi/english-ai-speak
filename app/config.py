@@ -32,11 +32,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # AI Services - OhMyGPT (OpenAI-compatible API)
+    # AI Services - Groq/OhMyGPT (OpenAI-compatible API)
+    # Có thể dùng với Groq, OhMyGPT, hoặc bất kỳ OpenAI-compatible API nào
     OHMYGPT_API_KEY: Optional[str] = None
-    OHMYGPT_BASE_URL: str = "https://api.ohmygpt.com/v1"
-    OHMYGPT_MODEL: str = "gpt-4o-mini"
-    OHMYGPT_TEMPERATURE: float = 0.7
+    OHMYGPT_BASE_URL: str = "https://api.groq.com/openai/v1"
+    OHMYGPT_MODEL: str = "llama-3.3-70b-versatile"
+    OHMYGPT_TEMPERATURE: float = 0.5
     OHMYGPT_MAX_TOKENS: int = 2000
     
     # Deepgram API - Speech Recognition & Pronunciation
