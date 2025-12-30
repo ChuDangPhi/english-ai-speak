@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = Field(None, description="URL avatar")
     current_level: str = Field(..., description="Trình độ hiện tại")
     is_active: bool = Field(..., description="Trạng thái active")
+    role: str = Field(default="user", description="Vai trò người dùng")
     created_at: datetime = Field(..., description="Thời gian tạo")
     
     class Config:

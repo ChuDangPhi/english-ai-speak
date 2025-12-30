@@ -369,3 +369,29 @@ def add_vocabulary_to_lesson(
     db.commit()
     
     return {"message": f"Đã thêm {len(vocabulary_ids)} từ vựng vào lesson"}
+@router.delete("/{lesson_id}/vocabulary/{vocabulary_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_vocabulary_from_lesson(
+    lesson_id: int,
+    vocabulary_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)  # Chỉ admin mới được xóa link
+):
+    """
+    🗑️ XÓA TỪ VỰNG KHỎI LESSON (Admin only)
+    
+    Logic:
+    - Xóa liên kết trong bảng lesson_vocabulary
+    - Không xóa từ vựng gốc
+    """
+    link = db.query(LessonVocabulary).filter(
+        LessonVocabulary.lesson_id == lesson_id,
+        LessonVocabulary.vocabulary_id == vocabulary_id
+    ).first()
+    
+    if not link:
+        raise HTTPException(status_code=404, detail="Không tìm thấy từ vựng trong bài học này")
+    
+    db.delete(link)
+    db.commit()
+    
+    return None
