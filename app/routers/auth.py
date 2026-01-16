@@ -9,17 +9,23 @@ Giải thích luồng hoạt động:
 5. Router xử lý logic (hash password, tạo user, tạo token)
 6. Return response (FastAPI tự động convert sang JSON)
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from jose import JWTError, jwt
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserRegister, UserLogin, TokenResponse, UserResponse, RefreshTokenRequest
+from app.schemas.user import (
+    UserRegister, UserLogin, TokenResponse, UserResponse, RefreshTokenRequest,
+    ForgotPasswordRequest, ResetPasswordRequest, ResendVerificationRequest, MessageResponse
+)
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token
 from app.core.dependencies import get_current_user
 from app.config import settings
+from app.utils.token import generate_verification_token, generate_password_reset_token
+from app.utils.email import send_verification_email, send_password_reset_email
 
 # Tạo router với prefix /auth
 router = APIRouter(
@@ -29,8 +35,9 @@ router = APIRouter(
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(
+async def register(
     user_data: UserRegister,  # ← Pydantic tự động validate
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)  # ← FastAPI tự động inject session
 ):
     """
@@ -40,11 +47,13 @@ def register(
     1. Kiểm tra email đã tồn tại chưa
     2. Hash password
     3. Tạo user mới trong database
-    4. Tạo JWT tokens (access + refresh)
-    5. Trả về tokens + thông tin user
+    4. Tạo verification token + gửi email xác thực
+    5. Tạo JWT tokens (access + refresh)
+    6. Trả về tokens + thông tin user
     
     Args:
         user_data: Dữ liệu đăng ký (email, password, full_name)
+        background_tasks: Background tasks để gửi email async
         db: Database session (auto-injected)
         
     Returns:
@@ -66,13 +75,19 @@ def register(
         # Bước 2: Hash password
         hashed_pwd = hash_password(user_data.password)
         
-        # Bước 3: Tạo user mới
+        # Bước 3: Tạo verification token
+        verification_token = generate_verification_token()
+        
+        # Bước 4: Tạo user mới
         new_user = User(
             email=user_data.email,
             password_hash=hashed_pwd,  # Lưu hash, không lưu plain password
             full_name=user_data.full_name,
             current_level="beginner",  # Default level
-            is_active=True
+            is_active=True,
+            email_verified=False,  # Chưa xác thực email
+            email_verification_token=verification_token,
+            email_verification_sent_at=datetime.utcnow()
         )
         
         # Lưu vào database
@@ -80,12 +95,20 @@ def register(
         db.commit()  # Commit transaction
         db.refresh(new_user)  # Lấy data mới nhất từ DB (bao gồm id, created_at...)
         
-        # Bước 4: Tạo JWT tokens
+        # Bước 5: Gửi email xác thực (background task - không block response)
+        background_tasks.add_task(
+            send_verification_email,
+            email=new_user.email,
+            full_name=new_user.full_name,
+            verification_token=verification_token
+        )
+        
+        # Bước 6: Tạo JWT tokens
         token_data = {"sub": str(new_user.id), "email": new_user.email}
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token(token_data)
         
-        # Bước 5: Trả về response
+        # Bước 7: Trả về response
         # FastAPI tự động convert UserResponse từ SQLAlchemy model
         return TokenResponse(
             access_token=access_token,
@@ -279,3 +302,241 @@ def logout(
         "user_email": current_user.email,
         "note": "Please remove tokens from client storage (localStorage/sessionStorage)"
     }
+
+
+# ============= EMAIL VERIFICATION ENDPOINTS =============
+
+@router.post("/forgot-password", response_model=MessageResponse, summary="Yêu cầu đặt lại mật khẩu")
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Gửi email đặt lại mật khẩu
+    
+    Luồng xử lý:
+    1. Tìm user theo email
+    2. Tạo reset token + thời gian hết hạn
+    3. Lưu token vào database
+    4. Gửi email (background task)
+    5. Trả về message (LUÔN thành công để không lộ email có tồn tại không)
+    
+    Args:
+        request: Email cần reset password
+        background_tasks: FastAPI background tasks để gửi email async
+        db: Database session
+        
+    Returns:
+        MessageResponse: Thông báo đã gửi email
+    """
+    # Tìm user theo email
+    user = db.query(User).filter(User.email == request.email).first()
+    
+    if user:
+        # Tạo reset token
+        reset_token = generate_password_reset_token()
+        
+        # Tính thời gian hết hạn (1 giờ)
+        expires_at = datetime.utcnow() + timedelta(hours=settings.PASSWORD_RESET_EXPIRE_HOURS)
+        
+        # Lưu token vào database
+        user.password_reset_token = reset_token
+        user.password_reset_token_expires_at = expires_at
+        db.commit()
+        
+        # Gửi email trong background (không block response)
+        background_tasks.add_task(
+            send_password_reset_email,
+            email=user.email,
+            full_name=user.full_name,
+            reset_token=reset_token
+        )
+    
+    # LUÔN trả về thành công (bảo mật - không tiết lộ email có tồn tại không)
+    return MessageResponse(
+        message="Nếu email tồn tại trong hệ thống, chúng tôi đã gửi link đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.",
+        success=True
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse, summary="Đặt lại mật khẩu")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Đặt lại mật khẩu với token từ email
+    
+    Luồng xử lý:
+    1. Tìm user theo reset token
+    2. Kiểm tra token chưa hết hạn
+    3. Hash mật khẩu mới
+    4. Cập nhật password + xóa token
+    5. Trả về thành công
+    
+    Args:
+        request: Token + mật khẩu mới
+        db: Database session
+        
+    Returns:
+        MessageResponse: Thông báo đã đổi mật khẩu
+        
+    Raises:
+        HTTPException 400: Token không hợp lệ hoặc hết hạn
+    """
+    # Tìm user theo reset token
+    user = db.query(User).filter(User.password_reset_token == request.token).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token không hợp lệ hoặc đã được sử dụng"
+        )
+    
+    # Kiểm tra token chưa hết hạn
+    if user.password_reset_token_expires_at < datetime.utcnow():
+        # Xóa token hết hạn
+        user.password_reset_token = None
+        user.password_reset_token_expires_at = None
+        db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token đã hết hạn. Vui lòng yêu cầu đặt lại mật khẩu mới."
+        )
+    
+    # Hash mật khẩu mới
+    user.password_hash = hash_password(request.new_password)
+    
+    # Xóa reset token (đã sử dụng)
+    user.password_reset_token = None
+    user.password_reset_token_expires_at = None
+    
+    db.commit()
+    
+    return MessageResponse(
+        message="Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập với mật khẩu mới.",
+        success=True
+    )
+
+
+@router.get("/verify-email/{token}", response_model=MessageResponse, summary="Xác thực email")
+def verify_email(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Xác thực email với token từ link trong email
+    
+    Luồng xử lý:
+    1. Tìm user theo verification token
+    2. Kiểm tra token còn hạn (24 giờ)
+    3. Set email_verified = True
+    4. Xóa token
+    5. Trả về thành công
+    
+    Args:
+        token: Token từ URL (path parameter)
+        db: Database session
+        
+    Returns:
+        MessageResponse: Thông báo đã xác thực
+        
+    Raises:
+        HTTPException 400: Token không hợp lệ hoặc hết hạn
+    """
+    # Tìm user theo verification token
+    user = db.query(User).filter(User.email_verification_token == token).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token không hợp lệ hoặc đã được sử dụng"
+        )
+    
+    # Kiểm tra đã verify chưa
+    if user.email_verified:
+        return MessageResponse(
+            message="Email đã được xác thực trước đó.",
+            success=True
+        )
+    
+    # Kiểm tra token còn hạn (24 giờ từ lúc gửi)
+    if user.email_verification_sent_at:
+        expires_at = user.email_verification_sent_at + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS)
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Link xác thực đã hết hạn. Vui lòng yêu cầu gửi lại email xác thực."
+            )
+    
+    # Xác thực email
+    user.email_verified = True
+    user.email_verification_token = None
+    user.email_verification_sent_at = None
+    
+    db.commit()
+    
+    return MessageResponse(
+        message="Email đã được xác thực thành công! Bạn có thể đăng nhập và sử dụng đầy đủ tính năng.",
+        success=True
+    )
+
+
+@router.post("/resend-verification", response_model=MessageResponse, summary="Gửi lại email xác thực")
+async def resend_verification_email(
+    request: ResendVerificationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Gửi lại email xác thực cho user chưa verify
+    
+    Luồng xử lý:
+    1. Tìm user theo email
+    2. Kiểm tra đã verify chưa
+    3. Tạo token mới
+    4. Gửi email
+    5. Trả về message
+    
+    Args:
+        request: Email cần gửi lại
+        background_tasks: Background tasks
+        db: Database session
+        
+    Returns:
+        MessageResponse: Thông báo đã gửi email
+    """
+    # Tìm user theo email
+    user = db.query(User).filter(User.email == request.email).first()
+    
+    if user:
+        # Kiểm tra đã verify chưa
+        if user.email_verified:
+            return MessageResponse(
+                message="Email đã được xác thực trước đó. Bạn có thể đăng nhập bình thường.",
+                success=True
+            )
+        
+        # Tạo token mới
+        verification_token = generate_verification_token()
+        
+        # Cập nhật token và thời gian gửi
+        user.email_verification_token = verification_token
+        user.email_verification_sent_at = datetime.utcnow()
+        db.commit()
+        
+        # Gửi email trong background
+        background_tasks.add_task(
+            send_verification_email,
+            email=user.email,
+            full_name=user.full_name,
+            verification_token=verification_token
+        )
+    
+    # LUÔN trả về thành công (bảo mật)
+    return MessageResponse(
+        message="Nếu email tồn tại và chưa được xác thực, chúng tôi đã gửi link xác thực mới. Vui lòng kiểm tra hộp thư.",
+        success=True
+    )

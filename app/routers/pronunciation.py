@@ -31,9 +31,10 @@ from app.models.user import User
 from app.schemas.pronunciation import (
     PronunciationSubmitRequest, PronunciationSubmitBase64Request,
     PronunciationAttemptResponse, PronunciationScoreDetail,
-    PronunciationFeedback, PronunciationLessonSummary
+    PronunciationFeedback, PronunciationLessonSummary,
+    QuickPronunciationCheckRequest, QuickPronunciationCheckResponse
 )
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_user_optional
 from app.config import settings
 
 # Import service
@@ -46,6 +47,67 @@ router = APIRouter(
 
 # Directory để lưu audio tạm
 UPLOAD_DIR = "uploads/audio/user_recordings"
+
+
+# ============================================================
+# POST /pronunciation/quick-check - Kiểm tra phát âm nhanh (không cần lesson)
+# ============================================================
+@router.post("/quick-check", response_model=QuickPronunciationCheckResponse)
+async def quick_pronunciation_check(
+    request: QuickPronunciationCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    🎤 KIỂM TRA PHÁT ÂM NHANH (KHÔNG CẦN LESSON)
+    
+    Dùng cho tính năng luyện tập từ vựng tự do.
+    Không lưu vào database, chỉ trả về kết quả đánh giá.
+    
+    Request body:
+    {
+        "expected_text": "restaurant",
+        "audio_base64": "data:audio/webm;base64,GkXfo59...",
+        "audio_format": "webm"
+    }
+    
+    Response:
+    - transcription: "restaurant" (user đọc được gì)
+    - scores: {pronunciation: 85, intonation: 78, stress: 90, accuracy: 84}
+    - feedback: {overall: "Tốt!", suggestions: [...]}
+    - is_passed: true/false
+    """
+    # 1. Save audio temporarily
+    user_id = current_user.id if current_user else 0  # 0 for guest
+    audio_url = save_audio_from_base64(
+        request.audio_base64,
+        user_id,
+        0,  # No exercise_id
+        request.audio_format
+    )
+    
+    # 2. Call Deepgram API for analysis
+    analysis_result = await analyze_pronunciation_with_deepgram(
+        audio_url,
+        request.expected_text,
+        request.audio_format
+    )
+    
+    # 3. Calculate scores
+    scores = calculate_pronunciation_scores(analysis_result, request.expected_text)
+    
+    # 4. Generate feedback
+    feedback = generate_pronunciation_feedback(scores, analysis_result, request.expected_text)
+    
+    # 5. Return response (không lưu DB)
+    return QuickPronunciationCheckResponse(
+        expected_text=request.expected_text,
+        transcription=analysis_result.get("transcription", ""),
+        scores=scores,
+        feedback=feedback,
+        is_passed=scores.accuracy_score >= 70,
+        is_mock=analysis_result.get("is_mock", False)
+    )
 
 
 # ============================================================

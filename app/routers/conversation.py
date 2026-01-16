@@ -32,6 +32,7 @@ from app.models.user import User
 from app.schemas.conversation import (
     ConversationStartRequest, ConversationStartResponse,
     ConversationMessageCreate, ConversationMessageResponse,
+    ConversationMessageWithAudio,
     AIConversationResponse, ConversationEndRequest,
     ConversationSummary, GrammarError, ConversationHistoryResponse
 )
@@ -40,11 +41,102 @@ from app.config import settings
 
 # Import services
 from app.services.conversation_service import conversation_service, ConversationContext
+from app.services.tts_service import tts_service
 
 router = APIRouter(
     prefix="/conversation",
     tags=["Conversation"]
 )
+
+
+# ============================================================
+# POST /conversation/chat - Chat đơn giản với AI (cho frontend cũ)
+# ============================================================
+from pydantic import BaseModel
+
+class ChatMessage(BaseModel):
+    role: str  # "user", "assistant", "system"
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    topic_id: Optional[int] = None
+
+class ChatResponse(BaseModel):
+    reply: str
+    audio_url: Optional[str] = None
+    error: Optional[str] = None
+
+@router.post("/chat", response_model=ChatResponse)
+async def simple_chat(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    💬 CHAT ĐƠN GIẢN VỚI AI
+    
+    Endpoint này cho phép gửi messages array trực tiếp đến AI
+    và nhận response. Không cần lesson_attempt.
+    
+    Dùng cho:
+    - Chat tự do với AI
+    - Frontend cũ gọi /conversation/chat
+    """
+    import httpx
+    
+    print(f"💬 Simple chat - {len(request.messages)} messages from user {current_user.id}")
+    
+    try:
+        # Build messages for Groq API
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        
+        # Add system prompt if not exists
+        if not any(m["role"] == "system" for m in messages):
+            messages.insert(0, {
+                "role": "system",
+                "content": "You are a helpful English tutor. Help the user practice English conversation. Keep responses natural and encouraging. Correct grammar mistakes gently."
+            })
+        
+        # Call Groq/OhMyGPT API
+        groq_url = f"{settings.OHMYGPT_BASE_URL}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.OHMYGPT_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": settings.OHMYGPT_MODEL or "llama-3.3-70b-versatile",
+            "messages": messages,
+            "max_tokens": 500,
+            "temperature": 0.7
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(groq_url, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            ai_reply = data["choices"][0]["message"]["content"]
+            
+            # Generate TTS audio
+            audio_url = await tts_service.text_to_speech(text=ai_reply, voice="female_us")
+            
+            print(f"✅ AI reply: {ai_reply[:50]}...")
+            return ChatResponse(reply=ai_reply, audio_url=audio_url)
+        else:
+            error_msg = f"Groq API error: {response.status_code}"
+            print(f"❌ {error_msg}")
+            return ChatResponse(
+                reply="I'm sorry, I'm having trouble responding right now. Please try again.",
+                error=error_msg
+            )
+            
+    except Exception as e:
+        print(f"❌ Chat error: {e}")
+        return ChatResponse(
+            reply="I'm sorry, something went wrong. Please try again.",
+            error=str(e)
+        )
 
 
 # ============================================================
@@ -123,12 +215,17 @@ async def start_conversation(
         
         print(f"💬 Opening message: {opening_text[:50]}...")
         
-        # 5. Save opening message
+        # 5. Generate TTS audio for opening message
+        opening_audio_url = await tts_service.text_to_speech(text=opening_text, voice="female_us")
+        print(f"🔊 Opening audio: {opening_audio_url}")
+        
+        # 6. Save opening message
         opening_message = ConversationMessage(
             lesson_attempt_id=lesson_attempt.id,
             message_order=1,
             speaker=SpeakerType.AI,
-            message_text=opening_text
+            message_text=opening_text,
+            audio_url=opening_audio_url
         )
         db.add(opening_message)
         db.commit()
@@ -153,7 +250,7 @@ async def start_conversation(
             except:
                 suggested_topics = []
         
-        # 6. Return response
+        # 7. Return response
         return ConversationStartResponse(
             lesson_attempt_id=lesson_attempt.id,
             lesson_id=lesson.id,
@@ -169,7 +266,7 @@ async def start_conversation(
                 message_order=opening_message.message_order,
                 speaker="ai",
                 message_text=opening_message.message_text,
-                audio_url=None,
+                audio_url=opening_audio_url,
                 grammar_errors=None,
                 vocabulary_used=None,
                 sentiment=None,
@@ -184,6 +281,142 @@ async def start_conversation(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# POST /conversation/message-voice - Gửi tin nhắn bằng giọng nói
+# ============================================================
+@router.post("/message-voice", response_model=AIConversationResponse)
+async def send_message_voice(
+    request: ConversationMessageWithAudio,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🎤 GỬI TIN NHẮN BẰNG GIỌNG NÓI
+    
+    Flow:
+    1. Nhận audio base64 từ frontend
+    2. Gọi Deepgram API để Speech-to-Text
+    3. Lưu tin nhắn user (text + audio)
+    4. Phân tích grammar, vocabulary
+    5. Gọi AI để generate reply
+    6. Generate TTS cho AI reply
+    7. Trả về text + audio cho cả 2
+    
+    Request:
+    {
+        "lesson_attempt_id": 123,
+        "audio_base64": "data:audio/webm;base64,...",
+        "audio_format": "webm"
+    }
+    """
+    # 1. Verify lesson_attempt
+    lesson_attempt = db.query(LessonAttempt).filter(
+        LessonAttempt.id == request.lesson_attempt_id,
+        LessonAttempt.user_id == current_user.id
+    ).first()
+    
+    if not lesson_attempt:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên hội thoại")
+    
+    if lesson_attempt.is_completed:
+        raise HTTPException(status_code=400, detail="Hội thoại đã kết thúc")
+    
+    # 2. Get conversation template
+    template = db.query(ConversationTemplate).filter(
+        ConversationTemplate.lesson_id == lesson_attempt.lesson_id
+    ).first()
+    
+    # 3. Get message history
+    history = db.query(ConversationMessage).filter(
+        ConversationMessage.lesson_attempt_id == request.lesson_attempt_id
+    ).order_by(ConversationMessage.message_order).all()
+    
+    current_order = len(history) + 1
+    
+    # 4. Speech-to-Text: Convert audio to text
+    user_audio_url, transcription = await speech_to_text(
+        request.audio_base64,
+        current_user.id,
+        request.audio_format
+    )
+    
+    if not transcription:
+        raise HTTPException(status_code=400, detail="Không nhận diện được giọng nói")
+    
+    print(f"🎤 User said: '{transcription}'")
+    
+    # 5. Analyze user message
+    analysis = analyze_user_message(transcription)
+    
+    # 6. Save user message with audio
+    user_message = ConversationMessage(
+        lesson_attempt_id=request.lesson_attempt_id,
+        message_order=current_order,
+        speaker=SpeakerType.USER,
+        message_text=transcription,
+        audio_url=user_audio_url,
+        grammar_errors=analysis.get("grammar_errors"),
+        vocabulary_used=analysis.get("vocabulary_used"),
+        sentiment=analysis.get("sentiment")
+    )
+    db.add(user_message)
+    
+    # 7. Generate AI reply
+    ai_reply_text = await generate_ai_reply(
+        template=template,
+        history=history,
+        user_message=transcription
+    )
+    
+    # 8. Generate TTS for AI reply
+    ai_audio_url = await tts_service.text_to_speech(text=ai_reply_text, voice="female_us")
+    print(f"🔊 AI reply audio (voice): {ai_audio_url}")
+    
+    # 9. Save AI message
+    ai_message = ConversationMessage(
+        lesson_attempt_id=request.lesson_attempt_id,
+        message_order=current_order + 1,
+        speaker=SpeakerType.AI,
+        message_text=ai_reply_text,
+        audio_url=ai_audio_url
+    )
+    db.add(ai_message)
+    
+    # 10. Update conversation turns
+    lesson_attempt.conversation_turns = (current_order + 1) // 2
+    
+    db.commit()
+    db.refresh(ai_message)
+    db.refresh(user_message)
+    
+    # 11. Generate suggested replies
+    suggested_replies = generate_suggested_replies(template, ai_reply_text)
+    
+    # 12. Check if can end
+    can_end = lesson_attempt.conversation_turns >= template.min_turns
+    
+    return AIConversationResponse(
+        ai_message=ConversationMessageResponse(
+            id=ai_message.id,
+            message_order=ai_message.message_order,
+            speaker="ai",
+            message_text=ai_message.message_text,
+            audio_url=ai_audio_url,
+            grammar_errors=None,
+            vocabulary_used=None,
+            sentiment=None,
+            created_at=ai_message.created_at
+        ),
+        user_message_analysis=analysis,
+        user_transcription=transcription,
+        user_audio_url=user_audio_url,
+        suggested_replies=suggested_replies,
+        current_turn=lesson_attempt.conversation_turns,
+        min_turns=template.min_turns,
+        can_end=can_end
+    )
 
 
 # ============================================================
@@ -263,25 +496,30 @@ async def send_message(
         user_message=request.message_text
     )
     
-    # 7. Save AI message
+    # 7. Generate TTS audio for AI reply
+    ai_audio_url = await tts_service.text_to_speech(text=ai_reply_text, voice="female_us")
+    print(f"🔊 AI reply audio (text): {ai_audio_url}")
+    
+    # 8. Save AI message
     ai_message = ConversationMessage(
         lesson_attempt_id=request.lesson_attempt_id,
         message_order=current_order + 1,
         speaker=SpeakerType.AI,
-        message_text=ai_reply_text
+        message_text=ai_reply_text,
+        audio_url=ai_audio_url
     )
     db.add(ai_message)
     
-    # 8. Update conversation turns
+    # 9. Update conversation turns
     lesson_attempt.conversation_turns = (current_order + 1) // 2  # Count pairs
     
     db.commit()
     db.refresh(ai_message)
     
-    # 9. Generate suggested replies
+    # 10. Generate suggested replies
     suggested_replies = generate_suggested_replies(template, ai_reply_text)
     
-    # 10. Check if can end
+    # 11. Check if can end
     can_end = lesson_attempt.conversation_turns >= template.min_turns
     
     return AIConversationResponse(
@@ -290,7 +528,7 @@ async def send_message(
             message_order=ai_message.message_order,
             speaker="ai",
             message_text=ai_message.message_text,
-            audio_url=None,
+            audio_url=ai_audio_url,
             grammar_errors=None,
             vocabulary_used=None,
             sentiment=None,
@@ -704,3 +942,105 @@ def get_areas_to_improve(fluency: float, grammar: float, vocabulary: float) -> L
     if vocabulary < 70:
         areas.append("Learn more vocabulary related to this topic")
     return areas if areas else ["Keep up the good work!"]
+
+# ============================================================
+# Speech-to-Text Helper Function
+# ============================================================
+import os
+import base64
+import uuid
+
+STT_UPLOAD_DIR = "uploads/audio/conversation"
+
+async def speech_to_text(audio_base64: str, user_id: int, audio_format: str) -> tuple:
+    """
+    Chuyển đổi audio thành text sử dụng Deepgram API
+    
+    Args:
+        audio_base64: Audio data encoded base64
+        user_id: ID của user
+        audio_format: Format (webm, wav, mp3)
+        
+    Returns:
+        tuple: (audio_url, transcription)
+    """
+    import httpx
+    
+    # 1. Tạo thư mục nếu chưa có
+    user_folder = os.path.join(STT_UPLOAD_DIR, str(user_id))
+    os.makedirs(user_folder, exist_ok=True)
+    
+    # 2. Decode và lưu audio
+    if "," in audio_base64:
+        base64_part = audio_base64.split(",")[1]
+        audio_data = base64.b64decode(base64_part)
+    else:
+        audio_data = base64.b64decode(audio_base64)
+    
+    # 3. Save audio file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]
+    filename = f"user_{timestamp}_{unique_id}.{audio_format}"
+    filepath = os.path.join(user_folder, filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(audio_data)
+    
+    audio_url = f"/uploads/audio/conversation/{user_id}/{filename}"
+    print(f"💾 Saved user audio: {audio_url}")
+    
+    # 4. Call Deepgram API for Speech-to-Text
+    if not settings.DEEPGRAM_API_KEY:
+        print("❌ DEEPGRAM_API_KEY not set!")
+        return audio_url, None
+    
+    try:
+        # Xác định mimetype
+        mimetype_map = {
+            "webm": "audio/webm",
+            "wav": "audio/wav",
+            "mp3": "audio/mpeg",
+            "m4a": "audio/m4a",
+            "ogg": "audio/ogg"
+        }
+        mimetype = mimetype_map.get(audio_format, "audio/webm")
+        
+        # Deepgram REST API
+        url = "https://api.deepgram.com/v1/listen"
+        params = {
+            "model": settings.DEEPGRAM_MODEL or "nova-2",
+            "language": settings.DEEPGRAM_LANGUAGE or "en-US",
+            "punctuate": "true",
+            "smart_format": "true",
+        }
+        headers = {
+            "Authorization": f"Token {settings.DEEPGRAM_API_KEY}",
+            "Content-Type": mimetype,
+        }
+        
+        print(f"🎯 Calling Deepgram STT API...")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                params=params,
+                headers=headers,
+                content=audio_data
+            )
+        
+        if response.status_code == 200:
+            data = response.json()
+            channels = data.get("results", {}).get("channels", [])
+            if channels:
+                alternatives = channels[0].get("alternatives", [])
+                if alternatives:
+                    transcription = alternatives[0].get("transcript", "")
+                    print(f"✅ Deepgram STT: '{transcription}'")
+                    return audio_url, transcription
+        else:
+            print(f"❌ Deepgram error: {response.status_code} - {response.text[:200]}")
+            
+    except Exception as e:
+        print(f"❌ Deepgram STT error: {type(e).__name__}: {e}")
+    
+    return audio_url, None

@@ -120,6 +120,7 @@ from app.routers import attempts
 from app.routers import pronunciation
 from app.routers import conversation
 from app.routers import progress
+from app.routers import user
 
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(topics.router, prefix="/api/v1", tags=["Topics"])
@@ -129,11 +130,17 @@ app.include_router(attempts.router, prefix="/api/v1")  # Tag đã định nghĩa
 app.include_router(pronunciation.router, prefix="/api/v1", tags=["Pronunciation"])
 app.include_router(conversation.router, prefix="/api/v1", tags=["Conversation"])
 app.include_router(progress.router, prefix="/api/v1", tags=["Progress"])
+app.include_router(user.router, prefix="/api/v1", tags=["User Profile"])
 
 # Mount static files
 static_path = Path("app/static")
 static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
+# Mount uploads directory for audio files (TTS, recordings, etc.)
+uploads_path = Path("uploads")
+uploads_path.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_path)), name="uploads")
 
 
 if __name__ == "__main__":

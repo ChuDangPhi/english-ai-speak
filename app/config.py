@@ -71,6 +71,22 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None
     
+    # ===== EMAIL SMTP CONFIGURATION =====
+    # Gmail SMTP settings
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = "phi.chudang@gmail.com"
+    SMTP_PASSWORD: Optional[str] = "difc beuw lwjx biqd"  # Gmail App Password (16 characters)
+    EMAILS_FROM_EMAIL: Optional[str] = "phi.chudang@gmail.com"
+    EMAILS_FROM_NAME: str = "AI English Tutor"  # Sender name shown in email
+    
+    # Token expiration settings
+    EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24  # Verification link valid for 24 hours
+    PASSWORD_RESET_EXPIRE_HOURS: int = 1  # Reset link valid for 1 hour
+    
+    # Frontend URL (for email links)
+    FRONTEND_URL: str = "http://localhost:5173"  # Vite default port
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

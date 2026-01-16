@@ -78,3 +78,47 @@ class TokenResponse(BaseModel):
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field(default="bearer", description="Loại token")
     user: UserResponse = Field(..., description="Thông tin user")
+
+
+# ============= PASSWORD RESET & EMAIL VERIFICATION SCHEMAS =============
+
+class ForgotPasswordRequest(BaseModel):
+    """
+    Schema cho yêu cầu quên mật khẩu
+    Client gửi email để nhận link reset
+    """
+    email: EmailStr = Field(..., description="Email đã đăng ký", examples=["user@example.com"])
+
+
+class ResetPasswordRequest(BaseModel):
+    """
+    Schema cho đặt lại mật khẩu
+    Client gửi token (từ email) + mật khẩu mới
+    """
+    token: str = Field(..., description="Token từ email reset password")
+    new_password: str = Field(..., min_length=6, max_length=100, description="Mật khẩu mới")
+    
+    @validator('new_password')
+    def password_strength(cls, v):
+        """Kiểm tra độ mạnh mật khẩu mới"""
+        if not any(char.isdigit() for char in v):
+            raise ValueError('Mật khẩu phải chứa ít nhất 1 số')
+        if not any(char.isalpha() for char in v):
+            raise ValueError('Mật khẩu phải chứa ít nhất 1 chữ cái')
+        return v
+
+
+class ResendVerificationRequest(BaseModel):
+    """
+    Schema cho yêu cầu gửi lại email xác thực
+    """
+    email: EmailStr = Field(..., description="Email cần gửi lại xác thực", examples=["user@example.com"])
+
+
+class MessageResponse(BaseModel):
+    """
+    Schema response đơn giản chỉ chứa message
+    Dùng cho các API không cần trả về data phức tạp
+    """
+    message: str = Field(..., description="Thông báo kết quả")
+    success: bool = Field(default=True, description="Trạng thái thành công")

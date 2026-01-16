@@ -98,6 +98,10 @@ class AIConversationResponse(BaseModel):
     # Phân tích tin nhắn user vừa gửi
     user_message_analysis: Optional[Dict[str, Any]] = None
     
+    # User transcription (for voice messages)
+    user_transcription: Optional[str] = None
+    user_audio_url: Optional[str] = None
+    
     # Gợi ý reply tiếp theo cho user
     suggested_replies: Optional[List[str]] = None
     

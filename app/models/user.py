@@ -62,6 +62,23 @@ class User(Base):
     # Thời gian cập nhật - Tự động cập nhật khi có thay đổi
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=True)
     
+    # ===== EMAIL VERIFICATION FIELDS =====
+    # Trạng thái xác thực email - Mặc định là False (chưa verify)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    
+    # Token để xác thực email (gửi trong email)
+    email_verification_token = Column(String(255), nullable=True, index=True)
+    
+    # Thời gian gửi email xác thực (để kiểm tra hết hạn)
+    email_verification_sent_at = Column(DateTime, nullable=True)
+    
+    # ===== PASSWORD RESET FIELDS =====
+    # Token để reset password (gửi trong email)
+    password_reset_token = Column(String(255), nullable=True, index=True)
+    
+    # Thời gian token reset hết hạn
+    password_reset_token_expires_at = Column(DateTime, nullable=True)
+    
     # Relationships
     settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
     lesson_attempts = relationship("LessonAttempt", back_populates="user", cascade="all, delete-orphan")

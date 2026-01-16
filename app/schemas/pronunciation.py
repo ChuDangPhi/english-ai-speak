@@ -61,6 +61,28 @@ class PronunciationSubmitBase64Request(BaseModel):
     audio_format: str = Field(default="webm", description="Format: webm, wav, mp3")
 
 
+class QuickPronunciationCheckRequest(BaseModel):
+    """
+    Schema cho quick pronunciation check (không cần lesson_attempt)
+    Dùng cho tính năng luyện tập nhanh từ vựng
+    """
+    expected_text: str = Field(..., description="Từ/câu cần đọc")
+    audio_base64: str = Field(..., description="Audio data encoded base64")
+    audio_format: str = Field(default="webm", description="Format: webm, wav, mp3")
+
+
+class QuickPronunciationCheckResponse(BaseModel):
+    """
+    Schema response cho quick pronunciation check
+    """
+    expected_text: str = Field(..., description="Từ cần đọc")
+    transcription: str = Field(..., description="Kết quả speech-to-text")
+    scores: "PronunciationScoreDetail"
+    feedback: "PronunciationFeedback"
+    is_passed: bool = Field(..., description="Đạt yêu cầu hay không (>= 70 điểm)")
+    is_mock: bool = Field(default=False, description="Có phải mock data không")
+
+
 # ============= RESPONSE SCHEMAS =============
 
 class PronunciationScoreDetail(BaseModel):
