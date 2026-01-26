@@ -18,6 +18,7 @@ Game nối từ:
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import (
@@ -29,7 +30,8 @@ from app.schemas.vocabulary import (
     VocabularyCreate, VocabularyUpdate, VocabularyResponse,
     VocabularyMatchingSubmitRequest, VocabularyMatchingSummary,
     VocabularyMatchingResultResponse, VocabularyWithUserProgress,
-    UserVocabularySaveRequest, UserVocabularyListResponse
+    UserVocabularySaveRequest, UserVocabularyListResponse,
+    UserVocabularyUpdateMasteryRequest
 )
 from app.core.dependencies import get_current_user, get_current_admin
 
@@ -216,6 +218,77 @@ def save_vocabulary(
     db.commit()
     
     return {"message": "Đã lưu từ vựng" if request.is_saved else "Đã bỏ lưu từ vựng"}
+
+
+# ============================================================
+# PUT /vocabulary/{vocabulary_id}/mastery - Cập nhật mastery level
+# ============================================================
+class MasteryLevelUpdate(BaseModel):
+    """Schema cập nhật mastery level"""
+    mastery_level: str
+
+@router.put("/{vocabulary_id}/mastery")
+def update_vocabulary_mastery(
+    vocabulary_id: int,
+    body: MasteryLevelUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    📈 CẬP NHẬT MASTERY LEVEL CỦA TỪ VỰNG
+    
+    Các mức mastery:
+    - new: Từ mới, chưa học
+    - learning: Đang học, chưa quen
+    - familiar: Đã quen, nhớ được phần lớn
+    - mastered: Đã thuộc, nhớ rất tốt
+    
+    Use case:
+    - User tự đánh giá mức độ thuộc từ trong Sổ từ vựng
+    - Hệ thống dựa vào để ưu tiên ôn tập từ chưa thuộc
+    """
+    # Validate mastery level
+    valid_levels = ["new", "learning", "familiar", "mastered"]
+    if body.mastery_level not in valid_levels:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"mastery_level phải là một trong: {', '.join(valid_levels)}"
+        )
+    
+    # Check vocabulary exists
+    vocab = db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
+    if not vocab:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Từ vựng không tồn tại"
+        )
+    
+    user_vocab = db.query(UserVocabulary).filter(
+        UserVocabulary.user_id == current_user.id,
+        UserVocabulary.vocabulary_id == vocabulary_id
+    ).first()
+    
+    if user_vocab:
+        user_vocab.mastery_level = body.mastery_level
+    else:
+        # Tạo mới nếu chưa tồn tại
+        user_vocab = UserVocabulary(
+            user_id=current_user.id,
+            vocabulary_id=vocabulary_id,
+            is_saved=False,
+            times_encountered=0,
+            times_correct=0,
+            mastery_level=body.mastery_level
+        )
+        db.add(user_vocab)
+    
+    db.commit()
+    
+    return {
+        "message": f"Đã cập nhật mastery level thành '{body.mastery_level}'",
+        "vocabulary_id": vocabulary_id,
+        "mastery_level": body.mastery_level
+    }
 
 
 # ============================================================

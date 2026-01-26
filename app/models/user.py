@@ -47,6 +47,12 @@ class User(Base):
     # Avatar URL - Có thể null
     avatar_url = Column(String(500), nullable=True)
     
+    # Số điện thoại - Có thể null
+    phone = Column(String(20), nullable=True)
+    
+    # Bio/Giới thiệu bản thân - Có thể null
+    bio = Column(String(500), nullable=True)
+    
     # Level hiện tại - Mặc định là "beginner"
     current_level = Column(String(20), default="beginner", nullable=True)
     

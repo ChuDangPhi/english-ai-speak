@@ -148,6 +148,10 @@ async def update_profile(
     # Update fields nếu có
     if data.full_name is not None:
         current_user.full_name = data.full_name
+    if data.phone is not None:
+        current_user.phone = data.phone
+    if data.bio is not None:
+        current_user.bio = data.bio
     if data.current_level is not None:
         current_user.current_level = data.current_level
     
@@ -170,6 +174,8 @@ async def update_profile(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
+        phone=current_user.phone,
+        bio=current_user.bio,
         avatar_url=current_user.avatar_url,
         current_level=current_user.current_level or "beginner",
         is_active=current_user.is_active,

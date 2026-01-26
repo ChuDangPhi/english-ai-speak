@@ -154,6 +154,12 @@ class UserVocabularySaveRequest(BaseModel):
     is_saved: bool = True
 
 
+class UserVocabularyUpdateMasteryRequest(BaseModel):
+    """Schema cập nhật mastery level của từ vựng"""
+    vocabulary_id: int
+    mastery_level: str = Field(..., description="new, learning, familiar, mastered")
+
+
 class UserVocabularyListResponse(BaseModel):
     """Schema danh sách từ vựng đã lưu của user"""
     items: List[VocabularyWithUserProgress]

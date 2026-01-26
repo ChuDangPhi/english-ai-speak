@@ -952,6 +952,486 @@ import uuid
 
 STT_UPLOAD_DIR = "uploads/audio/conversation"
 
+
+# ============================================================
+# POST /conversation/suggest-reply - Gợi ý câu trả lời
+# ============================================================
+class SuggestReplyRequest(BaseModel):
+    ai_message: str  # Tin nhắn gần nhất của AI
+    topic: Optional[str] = None  # Chủ đề đang nói
+    conversation_history: Optional[List[ChatMessage]] = None  # Lịch sử chat
+
+class SuggestReplyResponse(BaseModel):
+    suggestions: List[str]  # Các gợi ý câu trả lời
+    example_sentence: str  # Mẫu câu đầy đủ
+    explanation: Optional[str] = None  # Giải thích cách dùng
+
+@router.post("/suggest-reply", response_model=SuggestReplyResponse)
+async def suggest_reply(
+    request: SuggestReplyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    💡 GỢI Ý CÂU TRẢ LỜI CHO USER
+    
+    Khi user không biết trả lời gì, AI sẽ gợi ý:
+    - 3-4 cách trả lời ngắn gọn
+    - 1 mẫu câu đầy đủ làm ví dụ
+    - Giải thích ngắn về cách dùng
+    """
+    print(f"💡 Generating reply suggestions for: {request.ai_message[:50]}...")
+    
+    try:
+        from openai import OpenAI
+        
+        client = OpenAI(
+            api_key=settings.OHMYGPT_API_KEY,
+            base_url=settings.OHMYGPT_BASE_URL
+        )
+        
+        topic_context = f"Topic: {request.topic}" if request.topic else ""
+        
+        system_prompt = f"""You are an English tutor helping a student respond in a conversation.
+{topic_context}
+
+The AI assistant just said: "{request.ai_message}"
+
+Generate helpful response suggestions for the student:
+1. Provide 4 SHORT response options (3-8 words each)
+2. Provide 1 FULL example sentence (complete response)
+3. Brief explanation in Vietnamese about when to use these responses
+
+Respond in this exact JSON format:
+{{
+    "suggestions": ["Short reply 1", "Short reply 2", "Short reply 3", "Short reply 4"],
+    "example_sentence": "A complete example response sentence that the student can say",
+    "explanation": "Giải thích ngắn gọn bằng tiếng Việt về cách dùng các câu trả lời này"
+}}"""
+        
+        response = client.chat.completions.create(
+            model=settings.OHMYGPT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Generate suggestions"}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        import json
+        result_text = response.choices[0].message.content
+        
+        # Parse JSON response
+        try:
+            # Clean up response if needed
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0]
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0]
+            
+            result = json.loads(result_text.strip())
+            
+            return SuggestReplyResponse(
+                suggestions=result.get("suggestions", ["Yes", "No", "I'm not sure", "Can you repeat?"]),
+                example_sentence=result.get("example_sentence", "I would like to know more about that."),
+                explanation=result.get("explanation", "Bạn có thể chọn một trong các câu trên để trả lời.")
+            )
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            return SuggestReplyResponse(
+                suggestions=["Yes, please.", "No, thank you.", "I'm not sure.", "Can you explain more?"],
+                example_sentence="That sounds interesting, could you tell me more about it?",
+                explanation="Đây là các câu trả lời thông dụng bạn có thể sử dụng."
+            )
+            
+    except Exception as e:
+        print(f"❌ Suggest reply error: {e}")
+        return SuggestReplyResponse(
+            suggestions=["Yes", "No", "Maybe", "I don't know"],
+            example_sentence="I'm not sure, could you help me?",
+            explanation="Lỗi khi tạo gợi ý. Hãy thử lại sau."
+        )
+
+
+# ============================================================
+# POST /conversation/evaluate-message - Đánh giá tin nhắn user
+# ============================================================
+class EvaluateMessageRequest(BaseModel):
+    user_text: str  # Nội dung user nói/gõ
+    user_audio_url: Optional[str] = None  # URL audio của user (nếu có)
+    ai_previous_message: Optional[str] = None  # Tin nhắn AI trước đó
+    topic: Optional[str] = None
+
+class GrammarCorrection(BaseModel):
+    original: str
+    corrected: str
+    error_type: str  # grammar, spelling, word_choice, etc.
+    explanation: str  # Giải thích bằng tiếng Việt
+
+class PronunciationFeedback(BaseModel):
+    overall_score: float  # 1-10
+    clarity_score: float  # Độ rõ ràng
+    fluency_score: float  # Độ trôi chảy
+    accuracy_score: float  # Độ chính xác
+    feedback: str  # Nhận xét bằng tiếng Việt
+    words_to_practice: List[str]  # Từ cần luyện phát âm
+
+class EvaluateMessageResponse(BaseModel):
+    original_text: str
+    corrected_text: str
+    is_correct: bool  # Câu có đúng ngữ pháp không
+    grammar_corrections: List[GrammarCorrection]
+    pronunciation: Optional[PronunciationFeedback] = None
+    relevance_score: float  # Điểm liên quan đến context (1-10)
+    overall_feedback: str  # Nhận xét tổng hợp
+    encouragement: str  # Lời động viên
+
+@router.post("/evaluate-message", response_model=EvaluateMessageResponse)
+async def evaluate_message(
+    request: EvaluateMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    📝 ĐÁNH GIÁ TIN NHẮN CỦA USER
+    
+    Phân tích:
+    - Ngữ pháp: Sửa lỗi grammar
+    - Phát âm: Đánh giá pronunciation (nếu có audio)
+    - Liên quan: Câu trả lời có phù hợp với context không
+    - Feedback: Nhận xét và động viên
+    """
+    print(f"📝 Evaluating user message: {request.user_text[:50]}...")
+    
+    try:
+        from openai import OpenAI
+        
+        client = OpenAI(
+            api_key=settings.OHMYGPT_API_KEY,
+            base_url=settings.OHMYGPT_BASE_URL
+        )
+        
+        context = f"Topic: {request.topic}\nAI said: {request.ai_previous_message}" if request.ai_previous_message else ""
+        
+        system_prompt = f"""You are an English tutor evaluating a student's response.
+
+{context}
+
+The student said: "{request.user_text}"
+
+Analyze the student's response and provide feedback:
+1. Check grammar and suggest corrections
+2. Rate relevance to the conversation (1-10)
+3. Provide encouraging feedback in Vietnamese
+
+Respond in this exact JSON format:
+{{
+    "corrected_text": "The grammatically correct version of student's text",
+    "is_correct": true/false,
+    "grammar_corrections": [
+        {{
+            "original": "wrong part",
+            "corrected": "correct version",
+            "error_type": "grammar/spelling/word_choice",
+            "explanation": "Giải thích bằng tiếng Việt"
+        }}
+    ],
+    "relevance_score": 8.5,
+    "overall_feedback": "Nhận xét tổng hợp bằng tiếng Việt",
+    "encouragement": "Lời động viên bằng tiếng Việt"
+}}"""
+        
+        response = client.chat.completions.create(
+            model=settings.OHMYGPT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Evaluate the student's response"}
+            ],
+            temperature=0.3,
+            max_tokens=500
+        )
+        
+        import json
+        result_text = response.choices[0].message.content
+        
+        try:
+            # Clean up response
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0]
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0]
+            
+            result = json.loads(result_text.strip())
+            
+            # Parse grammar corrections
+            corrections = []
+            for c in result.get("grammar_corrections", []):
+                corrections.append(GrammarCorrection(
+                    original=c.get("original", ""),
+                    corrected=c.get("corrected", ""),
+                    error_type=c.get("error_type", "grammar"),
+                    explanation=c.get("explanation", "")
+                ))
+            
+            # Pronunciation feedback (nếu có audio)
+            pronunciation = None
+            if request.user_audio_url:
+                # Đánh giá pronunciation dựa trên text và audio
+                pronunciation = await evaluate_pronunciation(
+                    request.user_text, 
+                    request.user_audio_url
+                )
+            
+            return EvaluateMessageResponse(
+                original_text=request.user_text,
+                corrected_text=result.get("corrected_text", request.user_text),
+                is_correct=result.get("is_correct", True),
+                grammar_corrections=corrections,
+                pronunciation=pronunciation,
+                relevance_score=float(result.get("relevance_score", 8.0)),
+                overall_feedback=result.get("overall_feedback", "Câu trả lời tốt!"),
+                encouragement=result.get("encouragement", "Cố gắng lên! 💪")
+            )
+            
+        except json.JSONDecodeError:
+            return EvaluateMessageResponse(
+                original_text=request.user_text,
+                corrected_text=request.user_text,
+                is_correct=True,
+                grammar_corrections=[],
+                pronunciation=None,
+                relevance_score=7.0,
+                overall_feedback="Câu trả lời của bạn ổn!",
+                encouragement="Tiếp tục phát huy nhé! 👍"
+            )
+            
+    except Exception as e:
+        print(f"❌ Evaluate message error: {e}")
+        return EvaluateMessageResponse(
+            original_text=request.user_text,
+            corrected_text=request.user_text,
+            is_correct=True,
+            grammar_corrections=[],
+            pronunciation=None,
+            relevance_score=7.0,
+            overall_feedback="Không thể đánh giá lúc này.",
+            encouragement="Hãy tiếp tục luyện tập! 💪"
+        )
+
+
+async def evaluate_pronunciation(text: str, audio_url: str) -> PronunciationFeedback:
+    """Đánh giá phát âm từ audio"""
+    # TODO: Integrate với service đánh giá phát âm thực sự
+    # Hiện tại trả về mock data
+    
+    words = text.split()
+    words_to_practice = words[:3] if len(words) > 3 else words
+    
+    return PronunciationFeedback(
+        overall_score=7.5,
+        clarity_score=7.0,
+        fluency_score=8.0,
+        accuracy_score=7.5,
+        feedback="Phát âm của bạn khá tốt! Cần chú ý nhấn âm đúng vị trí.",
+        words_to_practice=words_to_practice
+    )
+
+
+# ============================================================
+# POST /conversation/end-simple - Kết thúc và đánh giá (không cần lesson_attempt)
+# ============================================================
+class SimpleConversationMessage(BaseModel):
+    role: str  # "user" or "ai"
+    content: str
+    audio_url: Optional[str] = None
+
+class EndSimpleRequest(BaseModel):
+    messages: List[SimpleConversationMessage]  # Toàn bộ lịch sử chat
+    topic: Optional[str] = None
+    topic_id: Optional[int] = None
+
+class ConversationScore(BaseModel):
+    fluency: float  # Độ trôi chảy (1-10)
+    grammar: float  # Ngữ pháp (1-10)
+    vocabulary: float  # Từ vựng (1-10)
+    relevance: float  # Liên quan đến chủ đề (1-10)
+    overall: float  # Điểm tổng (1-10)
+
+class EndSimpleResponse(BaseModel):
+    total_turns: int
+    user_messages_count: int
+    ai_messages_count: int
+    scores: ConversationScore
+    grammar_errors: List[GrammarCorrection]
+    vocabulary_used: List[str]
+    strengths: List[str]  # Điểm mạnh
+    areas_to_improve: List[str]  # Cần cải thiện
+    overall_feedback: str  # Nhận xét tổng hợp
+    tips: List[str]  # Mẹo luyện tập
+
+@router.post("/end-simple", response_model=EndSimpleResponse)
+async def end_simple_conversation(
+    request: EndSimpleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    🏁 KẾT THÚC VÀ ĐÁNH GIÁ HỘI THOẠI (SIMPLE VERSION)
+    
+    Dùng cho frontend chat đơn giản không cần lesson_attempt.
+    Phân tích toàn bộ conversation và trả về đánh giá tổng hợp.
+    """
+    print(f"🏁 Ending simple conversation with {len(request.messages)} messages")
+    
+    user_messages = [m for m in request.messages if m.role == "user"]
+    ai_messages = [m for m in request.messages if m.role == "ai"]
+    
+    # Collect all user text
+    user_text_all = " ".join([m.content for m in user_messages])
+    
+    try:
+        from openai import OpenAI
+        
+        client = OpenAI(
+            api_key=settings.OHMYGPT_API_KEY,
+            base_url=settings.OHMYGPT_BASE_URL
+        )
+        
+        # Build conversation for analysis
+        conversation_text = "\n".join([
+            f"{'User' if m.role == 'user' else 'AI'}: {m.content}" 
+            for m in request.messages
+        ])
+        
+        topic_info = f"Topic: {request.topic}" if request.topic else ""
+        
+        system_prompt = f"""You are an English tutor evaluating a student's conversation practice.
+
+{topic_info}
+
+Conversation:
+{conversation_text}
+
+Analyze the student's performance and provide detailed feedback.
+
+Respond in this exact JSON format:
+{{
+    "scores": {{
+        "fluency": 7.5,
+        "grammar": 8.0,
+        "vocabulary": 7.0,
+        "relevance": 8.5,
+        "overall": 7.75
+    }},
+    "grammar_errors": [
+        {{
+            "original": "i am go to school",
+            "corrected": "I am going to school",
+            "error_type": "verb_tense",
+            "explanation": "Cần dùng 'going' vì đây là thì hiện tại tiếp diễn"
+        }}
+    ],
+    "vocabulary_used": ["restaurant", "order", "food", "menu"],
+    "strengths": ["Good use of polite expressions", "Clear communication"],
+    "areas_to_improve": ["Work on verb tenses", "Use more varied vocabulary"],
+    "overall_feedback": "Nhận xét tổng hợp bằng tiếng Việt về buổi luyện tập",
+    "tips": ["Tip 1 bằng tiếng Việt", "Tip 2 bằng tiếng Việt"]
+}}"""
+        
+        response = client.chat.completions.create(
+            model=settings.OHMYGPT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Evaluate this conversation"}
+            ],
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        import json
+        result_text = response.choices[0].message.content
+        
+        try:
+            # Clean up response
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0]
+            elif "```" in result_text:
+                result_text = result_text.split("```")[1].split("```")[0]
+            
+            result = json.loads(result_text.strip())
+            
+            # Parse scores
+            scores_data = result.get("scores", {})
+            scores = ConversationScore(
+                fluency=float(scores_data.get("fluency", 7.0)),
+                grammar=float(scores_data.get("grammar", 7.0)),
+                vocabulary=float(scores_data.get("vocabulary", 7.0)),
+                relevance=float(scores_data.get("relevance", 7.0)),
+                overall=float(scores_data.get("overall", 7.0))
+            )
+            
+            # Parse grammar errors
+            grammar_errors = []
+            for e in result.get("grammar_errors", []):
+                grammar_errors.append(GrammarCorrection(
+                    original=e.get("original", ""),
+                    corrected=e.get("corrected", ""),
+                    error_type=e.get("error_type", "grammar"),
+                    explanation=e.get("explanation", "")
+                ))
+            
+            return EndSimpleResponse(
+                total_turns=len(user_messages),
+                user_messages_count=len(user_messages),
+                ai_messages_count=len(ai_messages),
+                scores=scores,
+                grammar_errors=grammar_errors[:10],  # Limit to 10
+                vocabulary_used=result.get("vocabulary_used", [])[:20],
+                strengths=result.get("strengths", ["Completed the conversation"]),
+                areas_to_improve=result.get("areas_to_improve", ["Keep practicing"]),
+                overall_feedback=result.get("overall_feedback", "Buổi luyện tập tốt!"),
+                tips=result.get("tips", ["Luyện tập mỗi ngày để tiến bộ hơn"])
+            )
+            
+        except json.JSONDecodeError as e:
+            print(f"JSON parse error: {e}")
+            # Fallback response
+            return create_fallback_evaluation(user_messages, ai_messages, user_text_all)
+            
+    except Exception as e:
+        print(f"❌ End simple error: {e}")
+        return create_fallback_evaluation(user_messages, ai_messages, user_text_all)
+
+
+def create_fallback_evaluation(user_messages, ai_messages, user_text_all):
+    """Tạo đánh giá mặc định khi AI gặp lỗi"""
+    # Simple word count based vocabulary
+    words = set(w.lower() for w in user_text_all.split() if len(w) > 3 and w.isalpha())
+    
+    return EndSimpleResponse(
+        total_turns=len(user_messages),
+        user_messages_count=len(user_messages),
+        ai_messages_count=len(ai_messages),
+        scores=ConversationScore(
+            fluency=7.0,
+            grammar=7.0,
+            vocabulary=7.0,
+            relevance=7.5,
+            overall=7.0
+        ),
+        grammar_errors=[],
+        vocabulary_used=list(words)[:15],
+        strengths=["Đã hoàn thành cuộc hội thoại", "Tham gia tích cực"],
+        areas_to_improve=["Tiếp tục luyện tập thường xuyên"],
+        overall_feedback="Bạn đã hoàn thành buổi luyện tập! Hãy tiếp tục cố gắng nhé.",
+        tips=[
+            "Luyện tập nói mỗi ngày 15-30 phút",
+            "Nghe nhiều tiếng Anh từ phim, nhạc",
+            "Đừng ngại mắc lỗi - đó là cách học tốt nhất"
+        ]
+    )
+
 async def speech_to_text(audio_base64: str, user_id: int, audio_format: str) -> tuple:
     """
     Chuyển đổi audio thành text sử dụng Deepgram API

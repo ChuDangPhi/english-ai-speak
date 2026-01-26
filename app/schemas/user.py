@@ -57,6 +57,8 @@ class UserResponse(BaseModel):
     id: int = Field(..., description="ID của user")
     email: str = Field(..., description="Email")
     full_name: Optional[str] = Field(None, description="Họ tên")
+    phone: Optional[str] = Field(None, description="Số điện thoại")
+    bio: Optional[str] = Field(None, description="Giới thiệu bản thân")
     avatar_url: Optional[str] = Field(None, description="URL avatar")
     current_level: str = Field(..., description="Trình độ hiện tại")
     is_active: bool = Field(..., description="Trạng thái active")
