@@ -96,7 +96,7 @@ GEMINI_API_KEY=your-gemini-api-key
 ### 6. Chạy ứng dụng
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+Push-Location D:\Personal\WEB_ENGLISH\ai_tutor_BE; D:\Personal\WEB_ENGLISH\ai_tutor_BE\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Hoặc:

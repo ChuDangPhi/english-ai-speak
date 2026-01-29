@@ -79,7 +79,8 @@ async def send_verification_email(
     
     try:
         # Tạo verification link - trỏ đến đúng path của file verify-email.html
-        verification_link = f"{settings.FRONTEND_URL}/Register_Login/verify-email.html?token={verification_token}"
+        # Note: Nếu Live Server chạy từ thư mục cha (FE_TA), cần thêm WebTA_FE/
+        verification_link = f"{settings.FRONTEND_URL}/WebTA_FE/Register_Login/verify-email.html?token={verification_token}"
         
         # Render HTML template
         template = jinja_env.get_template("email_verification.html")
@@ -140,7 +141,8 @@ async def send_password_reset_email(
     
     try:
         # Tạo reset link - trỏ đến đúng path của file reset-password.html
-        reset_link = f"{settings.FRONTEND_URL}/Register_Login/reset-password.html?token={reset_token}"
+        # Note: Nếu Live Server chạy từ thư mục cha (FE_TA), cần thêm WebTA_FE/
+        reset_link = f"{settings.FRONTEND_URL}/WebTA_FE/Register_Login/reset-password.html?token={reset_token}"
         
         # Render HTML template
         template = jinja_env.get_template("password_reset.html")

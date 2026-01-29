@@ -85,7 +85,8 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_HOURS: int = 1  # Reset link valid for 1 hour
     
     # Frontend URL (for email links)
-    FRONTEND_URL: str = "http://localhost:5173"  # Vite default port
+    # Live Server default port is 5500, change this if your Live Server uses different port
+    FRONTEND_URL: str = "http://127.0.0.1:5500"  # Live Server default port
     
     class Config:
         env_file = ".env"
