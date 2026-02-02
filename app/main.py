@@ -121,6 +121,7 @@ from app.routers import pronunciation
 from app.routers import conversation
 from app.routers import progress
 from app.routers import user
+from app.routers import admin_stats
 
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(topics.router, prefix="/api/v1", tags=["Topics"])
@@ -131,6 +132,7 @@ app.include_router(pronunciation.router, prefix="/api/v1", tags=["Pronunciation"
 app.include_router(conversation.router, prefix="/api/v1", tags=["Conversation"])
 app.include_router(progress.router, prefix="/api/v1", tags=["Progress"])
 app.include_router(user.router, prefix="/api/v1", tags=["User Profile"])
+app.include_router(admin_stats.router, prefix="/api/v1")  # Tags đã định nghĩa trong router
 
 # Mount static files
 static_path = Path("app/static")
