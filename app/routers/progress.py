@@ -1,16 +1,14 @@
 """
 Progress Router - API endpoints cho Tiến độ học tập và Streak
 
-=== GIẢI QUYẾT VẤN ĐỀ GÌ? ===
+GIẢI QUYẾT VẤN ĐỀ GÌ? 
 1. Hiển thị tiến độ tổng quan (dashboard)
 2. Quản lý streak (chuỗi ngày học liên tiếp)
 3. Thống kê chi tiết theo ngày/tuần/tháng
 4. Xem lại lịch sử học từ vựng
 
-=== LOGIC HOẠT ĐỘNG ===
+LOGIC HOẠT ĐỘNG 
 - Streak được reset nếu 1 ngày không học
-- Điểm kinh nghiệm (XP) tính từ các lesson completed
-- Level up khi đủ XP threshold
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -36,10 +34,7 @@ router = APIRouter(
     tags=["Progress"]
 )
 
-
-# ============================================================
 # GET /progress/overview - Tổng quan tiến độ
-# ============================================================
 @router.get("/overview", response_model=UserOverallProgress)
 def get_progress_overview(
     db: Session = Depends(get_db),
@@ -61,8 +56,6 @@ def get_progress_overview(
     Returns:
     - total_lessons_completed: 15
     - total_vocabulary_learned: 120
-    - current_level: 5
-    - total_experience_points: 2500
     """
     # Get or create user progress
     progress = db.query(UserProgress).filter(
@@ -71,9 +64,7 @@ def get_progress_overview(
     
     if not progress:
         progress = UserProgress(
-            user_id=current_user.id,
-            total_experience_points=0,
-            current_level=1
+            user_id=current_user.id
         )
         db.add(progress)
         db.commit()
@@ -126,9 +117,6 @@ def get_progress_overview(
     return UserOverallProgress(
         user_id=current_user.id,
         username=current_user.username,
-        current_level=progress.current_level,
-        total_experience_points=progress.total_experience_points,
-        xp_to_next_level=calculate_xp_to_next_level(progress.current_level, progress.total_experience_points),
         total_lessons_completed=lessons_completed,
         total_lessons=total_lessons,
         total_topics_completed=topics_completed,
@@ -150,25 +138,6 @@ def get_streak(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    🔥 LẤY THÔNG TIN STREAK
-    
-    Logic:
-    1. Lấy hoặc tạo UserStreak record
-    2. Kiểm tra xem hôm nay đã học chưa
-    3. Nếu hôm qua không học → reset streak
-    4. Trả về current streak và longest streak
-    
-    Use case:
-    - Hiển thị "🔥 5 ngày liên tiếp"
-    - Motivation widget trên dashboard
-    
-    Returns:
-    - current_streak: 5 (days)
-    - longest_streak: 12 (days)  
-    - learned_today: true
-    - last_activity_date: "2024-01-15"
-    """
     today = date.today()
     yesterday = today - timedelta(days=1)
     
@@ -218,16 +187,14 @@ def get_streak(
     )
 
 
-# ============================================================
 # POST /progress/streak/update - Cập nhật streak (internal)
-# ============================================================
 @router.post("/streak/update")
 def update_streak(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    ➕ CẬP NHẬT STREAK SAU KHI HOÀN THÀNH BÀI HỌC
+    CẬP NHẬT STREAK SAU KHI HOÀN THÀNH BÀI HỌC
     
     Logic:
     1. Kiểm tra xem hôm nay đã có activity chưa
@@ -280,37 +247,14 @@ def update_streak(
     }
 
 
-# ============================================================
 # GET /progress/daily - Thống kê theo ngày
-# ============================================================
 @router.get("/daily", response_model=List[DailyStatsResponse])
 def get_daily_stats(
     days: int = Query(7, ge=1, le=30),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    📅 LẤY THỐNG KÊ THEO NGÀY
     
-    Logic:
-    1. Query DailyStats cho N ngày gần nhất
-    2. Fill missing days với giá trị 0
-    3. Trả về array để vẽ chart
-    
-    Use case:
-    - Biểu đồ hoạt động 7 ngày gần nhất
-    - Calendar view
-    
-    Params:
-    - days: 7 (default) - số ngày cần lấy
-    
-    Returns:
-    [
-        {"date": "2024-01-15", "lessons_completed": 2, "minutes_studied": 45, ...},
-        {"date": "2024-01-14", "lessons_completed": 1, "minutes_studied": 30, ...},
-        ...
-    ]
-    """
     today = date.today()
     start_date = today - timedelta(days=days - 1)
     
@@ -336,7 +280,6 @@ def get_daily_stats(
                 lessons_completed=s.lessons_completed,
                 vocabulary_reviewed=s.vocabulary_reviewed,
                 minutes_studied=s.minutes_studied,
-                experience_points_earned=s.experience_points_earned,
                 pronunciation_exercises=s.pronunciation_exercises or 0,
                 conversation_turns=s.conversation_turns or 0
             ))
@@ -346,7 +289,6 @@ def get_daily_stats(
                 lessons_completed=0,
                 vocabulary_reviewed=0,
                 minutes_studied=0,
-                experience_points_earned=0,
                 pronunciation_exercises=0,
                 conversation_turns=0
             ))
@@ -354,9 +296,7 @@ def get_daily_stats(
     return result
 
 
-# ============================================================
 # GET /progress/weekly - Thống kê theo tuần
-# ============================================================
 @router.get("/weekly", response_model=WeeklyStatsResponse)
 def get_weekly_stats(
     db: Session = Depends(get_db),
@@ -371,8 +311,7 @@ def get_weekly_stats(
     stats = db.query(
         func.sum(DailyStats.lessons_completed).label('lessons'),
         func.sum(DailyStats.vocabulary_reviewed).label('vocab'),
-        func.sum(DailyStats.minutes_studied).label('minutes'),
-        func.sum(DailyStats.experience_points_earned).label('xp')
+        func.sum(DailyStats.minutes_studied).label('minutes')
     ).filter(
         DailyStats.user_id == current_user.id,
         DailyStats.date >= start_of_week,
@@ -403,15 +342,13 @@ def get_weekly_stats(
         lessons_completed=current_lessons,
         vocabulary_reviewed=stats.vocab or 0,
         minutes_studied=current_minutes,
-        experience_points_earned=stats.xp or 0,
         lessons_change_from_last_week=current_lessons - last_lessons,
         minutes_change_from_last_week=current_minutes - last_minutes
     )
 
 
-# ============================================================
+
 # GET /progress/topics - Tiến độ theo chủ đề
-# ============================================================
 @router.get("/topics", response_model=List[ProgressSummaryByTopic])
 def get_progress_by_topic(
     db: Session = Depends(get_db),
@@ -472,9 +409,8 @@ def get_progress_by_topic(
     return result
 
 
-# ============================================================
+
 # GET /progress/vocabulary - Vocabulary đã học
-# ============================================================
 @router.get("/vocabulary", response_model=List[UserVocabularyResponse])
 def get_vocabulary_progress(
     limit: int = Query(50, le=200),
@@ -522,9 +458,8 @@ def get_vocabulary_progress(
     return result
 
 
-# ============================================================
+
 # GET /progress/lessons - Tiến độ từng bài học
-# ============================================================
 @router.get("/lessons", response_model=List[LessonProgressResponse])
 def get_lessons_progress(
     topic_id: Optional[int] = None,
@@ -579,10 +514,8 @@ def get_lessons_progress(
     return result
 
 
-# ============================================================
-# Helper Functions
-# ============================================================
 
+# Helper Functions
 def get_completed_topics_count(db: Session, user_id: int) -> int:
     """Đếm số topic đã hoàn thành tất cả lessons"""
     topics = db.query(Topic).filter(Topic.is_active == True).all()
@@ -609,11 +542,4 @@ def get_completed_topics_count(db: Session, user_id: int) -> int:
     return completed_count
 
 
-def calculate_xp_to_next_level(current_level: int, current_xp: int) -> int:
-    """Tính XP cần để lên level tiếp theo"""
-    # Simple formula: each level needs level * 100 XP
-    # Level 1: 100 XP, Level 2: 200 XP, Level 3: 300 XP...
-    xp_needed_for_current = sum(i * 100 for i in range(1, current_level))
-    xp_needed_for_next = sum(i * 100 for i in range(1, current_level + 1))
-    
-    return max(xp_needed_for_next - current_xp, 0)
+

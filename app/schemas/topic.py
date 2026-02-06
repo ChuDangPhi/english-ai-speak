@@ -2,7 +2,6 @@
 Topic schemas - Cấu trúc dữ liệu cho Chủ đề học tập
 
 GIẢI THÍCH BẢNG TOPICS:
-========================
 Bảng `topics` lưu trữ các chủ đề học tiếng Anh thường gặp.
 Mỗi chủ đề có nhiều bài học (lessons) bên trong.
 

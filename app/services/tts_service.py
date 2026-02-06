@@ -1,7 +1,6 @@
 """
 Text-to-Speech Service - Chuyển đổi văn bản thành giọng nói
-
-Sử dụng Deepgram TTS API (chất lượng cao, giọng tự nhiên)
+Sử dụng Deepgram TTS API 
 Fallback về gTTS nếu Deepgram không khả dụng
 """
 import os

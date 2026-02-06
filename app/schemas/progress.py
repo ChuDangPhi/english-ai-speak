@@ -111,7 +111,6 @@ class DailyStatsResponse(BaseModel):
     lessons_completed: int = 0
     vocabulary_reviewed: int = 0
     minutes_studied: int = 0
-    experience_points_earned: int = 0
     pronunciation_exercises: int = 0
     conversation_turns: int = 0
     
@@ -126,7 +125,6 @@ class WeeklyStatsResponse(BaseModel):
     lessons_completed: int = 0
     vocabulary_reviewed: int = 0
     minutes_studied: int = 0
-    experience_points_earned: int = 0
     lessons_change_from_last_week: int = 0
     minutes_change_from_last_week: int = 0
 
@@ -169,9 +167,6 @@ class UserOverallProgress(BaseModel):
     """Tổng quan tiến độ học tập của user"""
     user_id: int
     username: str
-    current_level: int = 1
-    total_experience_points: int = 0
-    xp_to_next_level: int = 100
     
     # Lessons progress
     total_lessons_completed: int = 0

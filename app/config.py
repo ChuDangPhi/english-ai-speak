@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # AI Services - Groq/OhMyGPT (OpenAI-compatible API)
-    # Có thể dùng với Groq, OhMyGPT, hoặc bất kỳ OpenAI-compatible API nào
     OHMYGPT_API_KEY: Optional[str] = None
     OHMYGPT_BASE_URL: str = "https://api.groq.com/openai/v1"
     OHMYGPT_MODEL: str = "llama-3.3-70b-versatile"
